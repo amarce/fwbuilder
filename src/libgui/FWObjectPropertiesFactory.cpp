@@ -1056,7 +1056,8 @@ QString FWObjectPropertiesFactory::getPolicyRuleOptions(Rule *rule)
         }
     }
 
-    if (platform=="iptables")
+    bool is_iptables_family = (platform=="iptables" || platform=="nftables");
+    if (is_iptables_family)
     {
         if (prule)
         {
@@ -1338,7 +1339,8 @@ QString FWObjectPropertiesFactory::getNATRuleOptions(Rule *rule)
         if (fwbdebug)
             qDebug() << "getNATRuleOptions: platform: " << platform.c_str();
 
-        if (platform=="iptables")
+        bool is_iptables_family = (platform=="iptables" || platform=="nftables");
+        if (is_iptables_family)
         {
             if (ropt->getBool("ipt_use_snat_instead_of_masq"))
                 res += QObject::tr("use SNAT instead of MASQ<br>");
@@ -1386,4 +1388,3 @@ QString FWObjectPropertiesFactory::getInterfaceNameExamplesForHostOS(const QStri
 
     return "";
 }
-
