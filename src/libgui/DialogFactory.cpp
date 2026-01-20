@@ -252,6 +252,7 @@ QWidget *DialogFactory::createFWDialog(QWidget *parent, FWObject *o)
     if (dlgname=="ipf")      return new ipfAdvancedDialog(parent,o);
     if (dlgname=="ipfw")     return new ipfwAdvancedDialog(parent,o);
     if (dlgname=="iptables") return new iptAdvancedDialog(parent,o);
+    if (dlgname=="nftables") return new iptAdvancedDialog(parent,o);
     if (dlgname=="pf")       return new pfAdvancedDialog(parent,o);
     if (dlgname=="pix")      return new pixAdvancedDialog(parent,o);
     if (dlgname=="secuwall") return new secuwallAdvancedDialog(parent,o);
@@ -402,5 +403,4 @@ string DialogFactory::getActionDialogPageName(Firewall *fw, Rule *rule)
     } catch (FWException &ex) { }
     return editor_page;
 }
-
 

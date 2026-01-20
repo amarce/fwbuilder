@@ -221,7 +221,7 @@ bool isDefaultPolicyRuleOptions(FWOptions *opt)
     if (PolicyRuleOptions::isA(opt))
     {
 
-	if (platform=="iptables")
+	if (platform=="iptables" || platform=="nftables")
         {
 	    res= ( opt->getStr("log_prefix").empty() &&
                    opt->getStr("log_level").empty()      &&
@@ -357,7 +357,7 @@ bool isDefaultNATRuleOptions(FWOptions *opt)
 
     if (NATRuleOptions::isA(opt))
     {
-	if (platform=="iptables")
+	if (platform=="iptables" || platform=="nftables")
         {
             res = !opt->getBool("ipt_use_snat_instead_of_masq") &&
                 !opt->getBool("ipt_use_masq") &&
@@ -423,7 +423,7 @@ void getVersionsForPlatform(const QString &platform, std::list<QStringPair> &res
  * uniformity
  */
 
-    if (platform=="iptables")
+    if (platform=="iptables" || platform=="nftables")
     {
         res.push_back(QStringPair("", QObject::tr("- any -")));
         res.push_back(QStringPair("lt_1.2.6", QObject::tr("1.2.5 or earlier")));
@@ -1294,6 +1294,5 @@ QString findBestVersionMatch(const QString &platform,
     }
     return "";
 }
-
 
 

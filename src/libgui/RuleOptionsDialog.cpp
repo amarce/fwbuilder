@@ -102,8 +102,9 @@ void RuleOptionsDialog::loadFWObject(FWObject *o)
     FWOptions *ropt = rule->getOptionsObject();
     PolicyRule *policy_rule = PolicyRule::cast(rule);
 
+    bool is_iptables_family = (platform=="iptables" || platform=="nftables");
     int wid=0;
-    if (platform=="iptables") wid=1;
+    if (is_iptables_family) wid=1;
     if (platform=="ipf")      wid=2;
     if (platform=="pf")       wid=3;
     if (platform=="ipfw")     wid=4;
@@ -140,7 +141,7 @@ void RuleOptionsDialog::loadFWObject(FWObject *o)
 
     data.clear();
 
-    if (platform=="iptables")
+    if (is_iptables_family)
     {
         data.registerOption(m_dialog->ipt_logPrefix, ropt,  "log_prefix");
         data.registerOption(m_dialog->ipt_logLevel, ropt,
@@ -419,8 +420,9 @@ void RuleOptionsDialog::applyChanges()
     if (policy_rule)
     {
         FWOptions *ropt = policy_rule->getOptionsObject();
+        bool is_iptables_family = (platform=="iptables" || platform=="nftables");
 
-        if (platform=="iptables")
+        if (is_iptables_family)
         {
             FWObject *tag_object = m_dialog->iptTagDropArea->getObject();
             // if tag_object==nullptr, setTagObject clears setting in the rule
@@ -563,5 +565,3 @@ void RuleOptionsDialog::fillInterfaces(QComboBox* cb)
     cb->addItem("");
     cb->addItems(sorted_interfaces);
 }
-
-
