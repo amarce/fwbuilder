@@ -54,6 +54,9 @@
 
 #include "combinedAddress.h"
 
+#include "nft_utils.h"
+#include "nftables_options.h"
+
 #include "Configlet.h"
 
 #include <QStringList>
@@ -82,7 +85,7 @@ using namespace std;
 string PolicyCompiler_nft::PrintRule::_printSingleObjectNegation(
     RuleElement *rel)
 {
-    if (rel->getBool("single_object_negation"))   return "! ";
+    if (rel->getBool("single_object_negation"))   return "not ";
     else return "";
 }
 
@@ -95,19 +98,9 @@ string PolicyCompiler_nft::PrintRule::_printSingleObjectNegation(
 string PolicyCompiler_nft::PrintRule::_printSingleOptionWithNegation(
     const string &option, RuleElement *rel, const string &arg)
 {
-    ostringstream ostr;
-    if (XMLTools::version_compare(version, "1.4.3")>=0)
-    {
-        ostr << _printSingleObjectNegation(rel);
-        ostr << option << " ";
-        ostr << arg << " ";
-    } else
-    {
-        ostr << option << " ";
-        ostr << _printSingleObjectNegation(rel);
-        ostr << arg << " ";
-    }
-    return ostr.str();
+    if (rel->getBool("single_object_negation"))
+        return option + " != " + arg + " ";
+    return option + " " + arg + " ";
 }
 
 void PolicyCompiler_nft::PrintRule::initializeMinusNTracker()
@@ -135,17 +128,18 @@ string PolicyCompiler_nft::PrintRule::_createChain(const string &chain)
 
     if ( ipt_comp->minus_n_commands->count(chain)==0 )
     {
-        string opt_wait;
-
-        if (XMLTools::version_compare(version, "1.4.20")>=0)
-            opt_wait = "-w ";
-        else
-            opt_wait = "";
-
-	res = string((ipt_comp->ipv6) ? "$IP6TABLES " : "$IPTABLES ") +
-            opt_wait + "-N " + chain;
-        if (ipt_comp->my_table != "filter") res += " -t " + ipt_comp->my_table;
-        res += "\n";
+        bool atomic = useNftablesAtomic(compiler->getCachedFwOpt());
+        string prefix = nft_utils::commandPrefix(atomic);
+        string base_chain = nft_utils::baseChainDefinition(
+            ipt_comp->my_table, chain, ipt_comp->ipv6, "drop");
+        if (!base_chain.empty())
+        {
+            res = prefix + base_chain + "\n";
+        } else
+        {
+            res = prefix + "add chain " + nft_utils::familyName(ipt_comp->ipv6) +
+                " " + ipt_comp->my_table + " " + chain + "\n";
+        }
 	(*(ipt_comp->minus_n_commands))[chain] = true;
     }
     return res;
@@ -154,20 +148,10 @@ string PolicyCompiler_nft::PrintRule::_createChain(const string &chain)
 string PolicyCompiler_nft::PrintRule::_startRuleLine()
 {            
     PolicyCompiler_nft *ipt_comp = dynamic_cast<PolicyCompiler_nft*>(compiler);
-    string res = (ipt_comp->ipv6) ? "$IP6TABLES " : "$IPTABLES ";
-    string opt_wait;
-
-    if (XMLTools::version_compare(version, "1.4.20")>=0)
-        opt_wait = "-w ";
-    else
-        opt_wait = "";
-
-    res += opt_wait;
-
-    if (ipt_comp->my_table != "filter") res += "-t " + ipt_comp->my_table + " ";
-
-    res += "-A ";
-    return res;
+    bool atomic = useNftablesAtomic(compiler->getCachedFwOpt());
+    string prefix = nft_utils::commandPrefix(atomic);
+    return prefix + "add rule " + nft_utils::familyName(ipt_comp->ipv6) + " " +
+        ipt_comp->my_table + " ";
 }
 
 string PolicyCompiler_nft::PrintRule::_endRuleLine()
@@ -274,107 +258,47 @@ string PolicyCompiler_nft::PrintRule::_printModules(PolicyRule *rule)
         FWOptions *compopt=compiler->getCachedFwOpt();
         if ((lim=compopt->getInt("limit_value"))>0)
         {
-            ostr << " -m limit --limit " << lim;
-        
+            ostr << " limit rate " << lim;
+
             string ls=compopt->getStr("limit_suffix");
             if (!ls.empty()) ostr << ls;
 
             int lb=compopt->getInt("limit_burst");
-            if (lb>0) ostr << " --limit-burst " << lb;
+            if (lb>0) ostr << " burst " << lb;
         }
     } else {
         if (ruleopt!=nullptr && (lim=ruleopt->getInt("limit_value"))>0)
         {
             if (ruleopt->getBool("limit_value_not"))
-                ostr << " -m limit \\! --limit " << lim;
+                ostr << " limit rate over " << lim;
             else
-                ostr << " -m limit --limit " << lim;
+                ostr << " limit rate " << lim;
 
             string ls=ruleopt->getStr("limit_suffix");
             if (!ls.empty()) ostr << ls;
 
             int lb=ruleopt->getInt("limit_burst");
-            if (lb>0) ostr << " --limit-burst " << lb;
+            if (lb>0) ostr << " burst " << lb;
         }
     }
 
     if (ruleopt!=nullptr && (lim=ruleopt->getInt("connlimit_value"))>0)
     {
         if (ruleopt->getBool("connlimit_above_not"))
-            ostr << " -m connlimit \\! --connlimit-above " << lim;
+            ostr << " ct count <= " << lim;
         else
-            ostr << " -m connlimit --connlimit-above " << lim;
-
-        int ml=ruleopt->getInt("connlimit_masklen");
-        if (ml>0) ostr << " --connlimit-mask " << ml;
+            ostr << " ct count > " << lim;
     }
 
     if (ruleopt!=nullptr && (lim=ruleopt->getInt("hashlimit_value"))>0)
     {
-        string module_name = "hashlimit";
-        if (ruleopt->getBool("hashlimit_dstlimit"))
-            module_name = "dstlimit";
-
-        ostr << " -m " << module_name << " --" << module_name << " " << lim;
+        ostr << " limit rate " << lim;
 
         string ls = ruleopt->getStr("hashlimit_suffix");
         if (!ls.empty()) ostr << ls;
-            
+
         int lb=ruleopt->getInt("hashlimit_burst");
-        if (lb>0) ostr << " --" << module_name << "-burst " << lb;
-
-        ls = ruleopt->getStr("hashlimit_mode");
-        if (ls.empty())
-        {
-            /* syntax "--hashlimit-mode srcip,srcport " (i.e. with options
-               separated by commas) tested with iptables 1.3.6
-            */
-            QStringList opts;
-            bool f;
-
-            f = ruleopt->getBool("hashlimit_mode_srcip");
-            if (f) opts.push_back("srcip");
-
-            f = ruleopt->getBool("hashlimit_mode_dstip");
-            if (f) opts.push_back("dstip");
-
-            f = ruleopt->getBool("hashlimit_mode_srcport");
-            if (f) opts.push_back("srcport");
-
-            f = ruleopt->getBool("hashlimit_mode_dstport");
-            if (f) opts.push_back("dstport");
-
-            if (!opts.isEmpty())
-                ostr << " --" << module_name << "-mode " << opts.join(",").toStdString();
-        } else 
-            // hashlimit_mode is v2.1 option. In v3 we have options
-            // hashlimit_mode_srcip
-            // hashlimit_mode_dstip
-            // hashlimit_mode_srcport
-            // hashlimit_mode_dstport
-            ostr << " --" << module_name << "-mode " << ls;
-
-        string hl_name = ruleopt->getStr("hashlimit_name");
-        if (hl_name.empty())
-        {
-            std::ostringstream hn;
-            hn << "htable_rule_" << rule->getPosition();
-            hl_name = hn.str();
-        }
-        ostr << " --" << module_name << "-name " << hl_name;
-
-        int arg = ruleopt->getInt("hashlimit_size");
-        if (arg>0) ostr << " --" << module_name << "-htable-size " << arg;
-
-        arg = ruleopt->getInt("hashlimit_max");
-        if (arg>0) ostr << " --" << module_name << "-htable-max " << arg;
-
-        arg = ruleopt->getInt("hashlimit_expire");
-        if (arg>0) ostr << " --" << module_name << "-htable-expire " << arg;
-
-        arg = ruleopt->getInt("hashlimit_gcinterval");
-        if (arg>0) ostr << " --" << module_name << "-htable-gcinterval " << arg;
-
+        if (lb>0) ostr << " burst " << lb;
     }
 
     return ostr.str();
@@ -393,38 +317,23 @@ string PolicyCompiler_nft::PrintRule::_printTarget(PolicyRule *rule)
 
     if (rule->getTagging())
     {
-        ostr << " -j MARK";
-        ostr << " --set-mark " << rule->getTagValue();
+        ostr << " " << nft_utils::markSetExpression(rule->getTagValue());
         return ostr.str();
     }
 
     if (rule->getClassification())
     {
-        ostr << " -j CLASSIFY";
-        ostr << " --set-class " << ruleopt->getStr("classify_str");
+        ostr << " meta priority set " << ruleopt->getStr("classify_str");
         return ostr.str();
     }
 
     if (rule->getRouting())
     {
-        ostr << " -j ROUTE";
-
-        string a;
-        a = ruleopt->getStr("ipt_iif");
-        if (!a.empty()) ostr << " --iif " << a;
-
-        a = ruleopt->getStr("ipt_oif");
-        if (!a.empty()) ostr << " --oif " << a;
-
-        a = ruleopt->getStr("ipt_gw");
-        if (!a.empty()) ostr << " --gw " << a;
-
-        bool c = ruleopt->getBool("ipt_continue");
-        if (c) ostr << " --continue";
-
-        c = ruleopt->getBool("ipt_tee");
-        if (c) ostr << " --tee";
-
+        string out_iface = ruleopt->getStr("ipt_oif");
+        if (!out_iface.empty())
+            ostr << " fwd to " << out_iface;
+        else
+            ostr << " accept";
         return ostr.str();
     }
 
@@ -435,7 +344,7 @@ string PolicyCompiler_nft::PrintRule::_printTarget(PolicyRule *rule)
     }
 
     if (target==".CONTINUE") // not a real target !
-        return ostr.str();
+        return " continue";
 
 
     if (compiler->fw->getStr("host_OS")=="linux317" &&
@@ -446,7 +355,15 @@ string PolicyCompiler_nft::PrintRule::_printTarget(PolicyRule *rule)
     if (!ipt_comp->ipv6 && compiler->getCachedFwOpt()->getBool("use_ULOG") &&
          target=="LOG") target="ULOG";
 
-    ostr << " -j " << target << " ";
+    if (target == "ACCEPT") return " accept";
+    if (target == "DROP") return " drop";
+    if (target == "REJECT") return " " + _printActionOnReject(rule);
+    if (target == "LOG" || target=="ULOG" || target=="NFLOG")
+        return " log" + _printLogParameters(rule);
+    if (target == "QUEUE") return " queue";
+    if (target == "RETURN") return " return";
+
+    ostr << " jump " << target;
 
     if (target=="REJECT")
       ostr << _printActionOnReject(rule);
@@ -456,7 +373,7 @@ string PolicyCompiler_nft::PrintRule::_printTarget(PolicyRule *rule)
 
     if (target=="CONNMARK")
     {
-        ostr << ruleopt->getStr("CONNMARK_arg");
+        ostr << " ct mark set " << ruleopt->getStr("CONNMARK_arg");
     }
 
     return ostr.str();
@@ -464,17 +381,12 @@ string PolicyCompiler_nft::PrintRule::_printTarget(PolicyRule *rule)
 
 string PolicyCompiler_nft::PrintRule::_printMultiport(PolicyRule *rule)
 {
-    RuleElementSrv *srvrel=rule->getSrv();
-    string s;
-    if(srvrel->size()>1 && rule->getBool("ipt_multiport"))
-	s= " -m multiport ";
-
-    return s;
+    (void)rule;
+    return "";
 }
 
 string PolicyCompiler_nft::PrintRule::_printDirectionAndInterface(PolicyRule *rule)
 {
-    PolicyCompiler_nft *ipt_comp = dynamic_cast<PolicyCompiler_nft*>(compiler);
     QStringList res;
 
     if (rule->getStr(".iface") == "nil") return "";
@@ -483,70 +395,21 @@ string PolicyCompiler_nft::PrintRule::_printDirectionAndInterface(PolicyRule *ru
 
     QString iface_name;
     FWObject *rule_iface_obj = nullptr;
-    Interface *rule_iface = nullptr;
 
     if ( ! itfrel->isAny())
     {
         rule_iface_obj = FWObjectReference::getObject(itfrel->front());
-        rule_iface = Interface::cast(rule_iface_obj);
         iface_name = rule_iface_obj->getName().c_str();
         if (iface_name.endsWith("*")) iface_name.replace("*", "+");
  
-        if (rule_iface && rule_iface->isBridgePort() &&
-            (version.empty() ||
-             XMLTools::version_compare(version, "1.3.0")>=0))
-        {
-            /*
-              http://www.netfilter.org/projects/iptables/files/changes-iptables-1.2.9.txt
-              See SF bug #3439613
-              https://sourceforge.net/tracker/index.php?func=detail&aid=3439613&group_id=5314&atid=1129518#
-            
-              physdev module does not allow --physdev-out for
-              non-bridged traffic anymore. We should add
-              --physdev-is-bridged to make sure this matches only
-              bridged packets.
+        string iface_literal = "\"" + iface_name.toStdString() + "\"";
+        if (rule->getDirection()==PolicyRule::Inbound)
+            res << _printSingleOptionWithNegation(
+                "iifname", itfrel, iface_literal).c_str();
 
-              Also, adding "-i" / "-o" clause to match parent bridge
-              interface. This allows us to correctly match which
-              bridge the packet comes through in configurations using
-              wildcard bridge port interfaces. For example, when br0
-              and br1 have "vnet+" bridge port interface, iptables can
-              still correctly match which bridge the packet went
-              through using "-o br0" or "-o br1" clause. This can be
-              useful in installations with many bridged interfaces
-              that get created and destroyed dynamically, e.g.  with
-              virtual machines.
-
-              However add "-i br0" / "-o br0" only when there is more
-              than one bridge interface _and_ bridge port name ends with
-              a wild card symbol "+"
-            */
-
-            QString parent_name = rule_iface->getParent()->getName().c_str();
-
-            if (rule->getDirection()==PolicyRule::Inbound)
-            {
-                if (ipt_comp->bridge_count > 1 && iface_name.endsWith("+"))
-                    res << "-i" << parent_name;
-                res << "-m physdev --physdev-in"  << iface_name;
-            }
-
-            if (rule->getDirection()==PolicyRule::Outbound)
-            {
-                if (ipt_comp->bridge_count > 1 && iface_name.endsWith("+"))
-                    res << "-o" << parent_name;
-                res << "-m physdev --physdev-is-bridged --physdev-out" << iface_name;
-            }
-        } else
-        {
-            if (rule->getDirection()==PolicyRule::Inbound)   
-                res << _printSingleOptionWithNegation(
-                    "-i", itfrel, iface_name.toStdString()).c_str();
-
-            if (rule->getDirection()==PolicyRule::Outbound)  
-                res << _printSingleOptionWithNegation(
-                    "-o", itfrel, iface_name.toStdString()).c_str();
-        }
+        if (rule->getDirection()==PolicyRule::Outbound)
+            res << _printSingleOptionWithNegation(
+                "oifname", itfrel, iface_literal).c_str();
 
         res << "";
     }
@@ -556,67 +419,46 @@ string PolicyCompiler_nft::PrintRule::_printDirectionAndInterface(PolicyRule *ru
 
 string PolicyCompiler_nft::PrintRule::_printActionOnReject(PolicyRule *rule)
 {
-    std::ostringstream str;
-
     PolicyCompiler_nft *ipt_comp = dynamic_cast<PolicyCompiler_nft*>(compiler);
 
-//    RuleElementSrv *srvrel=rule->getSrv();
 #ifndef NDEBUG
     Service *srv = compiler->getFirstSrv(rule);
     assert(srv);
 #endif
 
     string s = ipt_comp->getActionOnReject(rule);
-    if (!s.empty()) 
-    {
-        if (ipt_comp->isActionOnRejectTCPRST(rule))
-            str << " --reject-with tcp-reset";
+    if (ipt_comp->isActionOnRejectTCPRST(rule))
+        return nft_utils::rejectWithExpression("tcp-reset", ipt_comp->ipv6);
 
-	if (s.find("ICMP")!=string::npos) 
-        {
-            if (ipt_comp->ipv6)
-            {
-                if (s.find("unreachable")!=string::npos) 
-                {
-                    if (s.find("net")!=string::npos ||
-                        s.find("host")!=string::npos)
-                        str << " --reject-with icmp6-addr-unreachable";
-                    if (s.find("port")!=string::npos ||
-                        s.find("proto")!=string::npos)
-                        str << " --reject-with icmp6-port-unreachable";
-                }
-                if (s.find("prohibited")!=string::npos) 
-                {
-                    str << " --reject-with icmp6-adm-prohibited";
-                }
-            } else
-            {
-                if (s.find("unreachable")!=string::npos) 
-                {
-                    if (s.find("net")!=string::npos)
-                        str << " --reject-with icmp-net-unreachable";
-                    if (s.find("host")!=string::npos)
-                        str << " --reject-with icmp-host-unreachable";
-                    if (s.find("port")!=string::npos)
-                        str << " --reject-with icmp-port-unreachable";
-                    if (s.find("proto")!=string::npos)
-                        str << " --reject-with icmp-proto-unreachable";
-                }
-                if (s.find("prohibited")!=string::npos) 
-                {
-                    if (s.find("net")!=string::npos)
-                        str << " --reject-with icmp-net-prohibited";
-                    if (s.find("host")!=string::npos)
-                        str << " --reject-with icmp-host-prohibited";
-                    if (XMLTools::version_compare(version, "1.2.9")>=0 &&
-                        s.find("admin")!=string::npos)
-                        str << " --reject-with icmp-admin-prohibited";
-                }
-            }
-        }
+    if (s.find("ICMP6") != string::npos)
+    {
+        if (s.find("Addr") != string::npos)
+            return nft_utils::rejectWithExpression("icmp6-addr-unreachable", true);
+        if (s.find("Port") != string::npos)
+            return nft_utils::rejectWithExpression("icmp6-port-unreachable", true);
+        if (s.find("Adm") != string::npos)
+            return nft_utils::rejectWithExpression("icmp6-adm-prohibited", true);
     }
-    str << " ";
-    return str.str();
+
+    if (s.find("ICMP") != string::npos)
+    {
+        if (s.find("Net Unreachable") != string::npos)
+            return nft_utils::rejectWithExpression("icmp-net-unreachable", false);
+        if (s.find("Host Unreachable") != string::npos)
+            return nft_utils::rejectWithExpression("icmp-host-unreachable", false);
+        if (s.find("Port Unreachable") != string::npos)
+            return nft_utils::rejectWithExpression("icmp-port-unreachable", false);
+        if (s.find("Proto Unreachable") != string::npos)
+            return nft_utils::rejectWithExpression("icmp-proto-unreachable", false);
+        if (s.find("Net Prohibited") != string::npos)
+            return nft_utils::rejectWithExpression("icmp-net-prohibited", false);
+        if (s.find("Host Prohibited") != string::npos)
+            return nft_utils::rejectWithExpression("icmp-host-prohibited", false);
+        if (s.find("Admin Prohibited") != string::npos)
+            return nft_utils::rejectWithExpression("icmp-admin-prohibited", false);
+    }
+
+    return nft_utils::rejectWithExpression("", ipt_comp->ipv6);
 }
 
 string PolicyCompiler_nft::PrintRule::_printGlobalLogParameters()
@@ -707,84 +549,19 @@ string PolicyCompiler_nft::PrintRule::_printLogPrefix(PolicyRule *rule,
 
 string PolicyCompiler_nft::PrintRule::_printLogParameters(PolicyRule *rule)
 {
-    PolicyCompiler_nft *ipt_comp = dynamic_cast<PolicyCompiler_nft*>(compiler);
     std::ostringstream str;
-    string s;
     FWOptions *ruleopt = (rule!=nullptr) ? 
         rule->getOptionsObject() : compiler->getCachedFwOpt();
 
-    bool use_nflog = (compiler->getCachedFwOpt()->getBool("use_ULOG") &&
-                      compiler->fw->getStr("host_OS")=="linux317");
+    string group = ruleopt->getStr("nflog_group");
+    if (group.empty()) group = compiler->getCachedFwOpt()->getStr("ulog_nlgroup");
+    if (!group.empty())
+        str << " group " << group;
 
-    // there is no ULOG for ip6tables yet
-    bool use_ulog = (!ipt_comp->ipv6 &&
-                     compiler->getCachedFwOpt()->getBool("use_ULOG"));
-
-    if (use_nflog)
-    {
-        s=ruleopt->getStr("nflog_group");
-        if (s.empty())  s=compiler->getCachedFwOpt()->getStr("ulog_nlgroup");
-        if (!s.empty())
-            str << " --nflog-group " << s;
-
-        s=ruleopt->getStr("log_prefix");
-        if (s.empty())  s=compiler->getCachedFwOpt()->getStr("log_prefix");
-        if (!s.empty())
-            str << " --nflog-prefix " << _printLogPrefix(rule, s);
-
-        int r=compiler->getCachedFwOpt()->getInt("ulog_cprange");
-        if (r!=0)  str << " --nflog-range " << r << " ";
-        r=compiler->getCachedFwOpt()->getInt("ulog_qthreshold");
-        if (r!=0)  str << " --nflog-threshold " << r << " ";
-    } else if (use_ulog)
-    {
-        s=ruleopt->getStr("ulog_nlgroup");
-        if (s.empty())  s=compiler->getCachedFwOpt()->getStr("ulog_nlgroup");
-        if (!s.empty()) 
-            str << " --ulog-nlgroup " << s;
-
-        s=ruleopt->getStr("log_prefix");
-        if (s.empty())  s=compiler->getCachedFwOpt()->getStr("log_prefix");
-        if (!s.empty()) 
-            str << " --ulog-prefix " << _printLogPrefix(rule, s);
-
-        int r=compiler->getCachedFwOpt()->getInt("ulog_cprange");
-        if (r!=0)  str << " --ulog-cprange " << r << " ";
-        r=compiler->getCachedFwOpt()->getInt("ulog_qthreshold");
-        if (r!=0)  str << " --ulog-qthreshold " << r << " ";
-    } else
-    {
-        bool   numeric_levels;
-        numeric_levels=compiler->getCachedFwOpt()->getBool("use_numeric_log_levels");
-        s=ruleopt->getStr("log_level");
-        if (s.empty())  s=compiler->getCachedFwOpt()->getStr("log_level");
-        if (!s.empty()) 
-        {
-            if ( numeric_levels )
-            {
-                if (s=="alert")   s="1";
-                if (s=="crit")    s="2";
-                if (s=="error")   s="3";
-                if (s=="warning") s="4";
-                if (s=="notice")  s="5";
-                if (s=="info")    s="6";
-                if (s=="debug")   s="7";
-            }
-            str << " --log-level " << s;
-        }
-
-        s=ruleopt->getStr("log_prefix");
-        if (s.empty())  s=compiler->getCachedFwOpt()->getStr("log_prefix");
-        if (!s.empty())
-            str << " --log-prefix " << _printLogPrefix(rule, s);
-
-        if (ruleopt->getBool("log_tcp_seq") || compiler->getCachedFwOpt()->getBool("log_tcp_seq"))  
-            str << " --log-tcp-sequence ";
-        if (ruleopt->getBool("log_tcp_opt") || compiler->getCachedFwOpt()->getBool("log_tcp_opt"))  
-            str << " --log-tcp-options ";
-        if (ruleopt->getBool("log_ip_opt") || compiler->getCachedFwOpt()->getBool("log_ip_opt"))   
-            str << " --log-ip-options ";
-    }
+    string prefix = ruleopt->getStr("log_prefix");
+    if (prefix.empty()) prefix = compiler->getCachedFwOpt()->getStr("log_prefix");
+    if (!prefix.empty())
+        str << " prefix " << _printLogPrefix(rule, prefix);
 
     return str.str();
 }
@@ -797,19 +574,19 @@ string PolicyCompiler_nft::PrintRule::_printLimit(libfwbuilder::PolicyRule *rule
     FWOptions *ruleopt =rule->getOptionsObject();
     FWOptions *compopt =compiler->getCachedFwOpt();
 
-    if ( (ruleopt!=nullptr && (l=ruleopt->getInt("limit_value"))>0) || 
-         (l=compopt->getInt("limit_value"))>0 ) 
+    if ( (ruleopt!=nullptr && (l=ruleopt->getInt("limit_value"))>0) ||
+         (l=compopt->getInt("limit_value"))>0 )
     {
-	str << "  -m limit --limit " << l;
+        str << " limit rate " << l;
 
         if (ruleopt!=nullptr) s=ruleopt->getStr("limit_suffix");
-	if (s.empty()) 	   s=compopt->getStr("limit_suffix");
-	if (!s.empty()) str << s;
-        
+        if (s.empty()) 	   s=compopt->getStr("limit_suffix");
+        if (!s.empty()) str << s;
+
         lb=-1;
-	if (ruleopt!=nullptr) lb=ruleopt->getInt("limit_burst");
-	if (lb<0)          lb=compopt->getInt("limit_burst");
-	if (lb>0)          str << " --limit-burst " << lb;
+        if (ruleopt!=nullptr) lb=ruleopt->getInt("limit_burst");
+        if (lb<0)          lb=compopt->getInt("limit_burst");
+        if (lb>0)          str << " burst " << lb;
     }
 
     return str.str();
@@ -837,10 +614,10 @@ string PolicyCompiler_nft::PrintRule::_printProtocol(Service *srv)
     if (!srv->isAny() && !TagService::isA(srv) && !UserService::isA(srv))
     {
         string pn = srv->getProtocolName();
-        if (pn=="ip" || pn=="any") pn = "all";
+        if (pn=="ip" || pn=="any") return "";
 
         if (ipt_comp->ipv6)
-        { 
+        {
             if (ICMPService::isA(srv))
             {
                 compiler->abort(
@@ -850,17 +627,10 @@ string PolicyCompiler_nft::PrintRule::_printProtocol(Service *srv)
 
             if (ICMP6Service::isA(srv))
             {
-                s = "-p ipv6-icmp ";
-                if (srv->getInt("type")!=-1 &&
-                    (version.empty() ||
-                     XMLTools::version_compare(version, "1.3.0")>=0))
-                    s += " -m icmp6";
+                s = "ip6 nexthdr icmpv6 ";
             } else
             {
-                // ip6tables issues warning for commands using "-p all"
-                // Warning: never matched protocol: all. use exension match instead
-                // Skip "-p all" if ipv6
-                if (pn!="all") s = "-p " + pn + " ";
+                s = "ip6 nexthdr " + pn + " ";
             }
         } else
         {
@@ -873,17 +643,12 @@ string PolicyCompiler_nft::PrintRule::_printProtocol(Service *srv)
 
             if (ICMPService::isA(srv))
             {
-                s = "-p icmp ";
-                if (version.empty() ||
-                    XMLTools::version_compare(version, "1.2.9")>=0)
-                    s += " -m icmp ";
+                s = "ip protocol icmp ";
             } else
             {
-                s = "-p " + pn + " ";
+                s = "ip protocol " + pn + " ";
             }
         }
-        if (pn == "tcp")  s += "-m tcp ";
-        if (pn == "udp")  s += "-m udp ";
     }
     return s;
 }
@@ -895,11 +660,10 @@ string PolicyCompiler_nft::PrintRule::_printPorts(int rs,int re)
     compiler->normalizePortRange(rs,re);
 
     if (rs>0 || re>0) {
-	if (rs==re)  str << rs;
-	else
-	    if (rs==0 && re!=0)      str << ":" << re;
-	    else
-                str << rs << ":" << re;
+        if (rs==re)  str << rs;
+        else if (rs==0 && re!=0)      str << "0-" << re;
+        else
+            str << rs << "-" << re;
     }
     return str.str();
 }
@@ -933,9 +697,10 @@ string PolicyCompiler_nft::PrintRule::_printICMP(ICMPService *srv)
     std::ostringstream  str;
     if (ICMPService::cast(srv) && srv->getInt("type")!=-1)
     {
-	str << srv->getStr("type");
-	if (srv->getInt("code")!=-1) 
-	    str << "/" << srv->getStr("code") << " ";
+        str << "icmp type " << srv->getStr("type");
+        if (srv->getInt("code")!=-1)
+            str << " code " << srv->getStr("code");
+        str << " ";
     }
     return str.str();
 }
@@ -1012,55 +777,31 @@ string PolicyCompiler_nft::PrintRule::_printIP(IPService *srv, PolicyRule *rule)
 
 string PolicyCompiler_nft::PrintRule::_printTCPFlags(libfwbuilder::TCPService *srv)
 {
-    string str;
-    if (srv->inspectFlags())
+    if (!srv->inspectFlags()) return "";
+
+    std::set<TCPService::TCPFlag> masks = srv->getAllTCPFlagMasks();
+    std::set<TCPService::TCPFlag> flags = srv->getAllTCPFlags();
+
+    std::ostringstream mask_str;
+    std::ostringstream comp_str;
+
+    bool first = true;
+    for (const auto &flag : masks)
     {
-        TCPService::TCPFlag f1[2]={ TCPService::SYN };
-        TCPService::TCPFlag f2[7]={ TCPService::URG,
-                                    TCPService::ACK,
-                                    TCPService::PSH,
-                                    TCPService::RST,
-                                    TCPService::SYN,
-                                    TCPService::FIN };
-
-        std::set<TCPService::TCPFlag> none;
-        std::set<TCPService::TCPFlag> syn( f1, f1+1 );
-        std::set<TCPService::TCPFlag> all_masks( f2 , f2+6 );
-
-        if (srv->getAllTCPFlags()==syn  && srv->getAllTCPFlagMasks()==all_masks)
-            str=" --tcp-flags SYN,RST,ACK SYN ";
-        else
-        {
-            str=" --tcp-flags ";
-            bool first=true;
-
-            if (srv->getAllTCPFlagMasks()==all_masks) str+="ALL";
-            else
-            {
-                if (srv->getTCPFlagMask(TCPService::URG)) { if (!first) str+=","; str+="URG"; first=false; }
-                if (srv->getTCPFlagMask(TCPService::ACK)) { if (!first) str+=","; str+="ACK"; first=false; }
-                if (srv->getTCPFlagMask(TCPService::PSH)) { if (!first) str+=","; str+="PSH"; first=false; }
-                if (srv->getTCPFlagMask(TCPService::RST)) { if (!first) str+=","; str+="RST"; first=false; }
-                if (srv->getTCPFlagMask(TCPService::SYN)) { if (!first) str+=","; str+="SYN"; first=false; }
-                if (srv->getTCPFlagMask(TCPService::FIN)) { if (!first) str+=","; str+="FIN"; first=false; }
-            }
-
-            str+=" ";
-
-            if (srv->getAllTCPFlags()==none) str+="NONE";
-            else
-            {
-                first=true;
-                if (srv->getTCPFlag(TCPService::URG)) { if (!first) str+=","; str+="URG"; first=false; }
-                if (srv->getTCPFlag(TCPService::ACK)) { if (!first) str+=","; str+="ACK"; first=false; }
-                if (srv->getTCPFlag(TCPService::PSH)) { if (!first) str+=","; str+="PSH"; first=false; }
-                if (srv->getTCPFlag(TCPService::RST)) { if (!first) str+=","; str+="RST"; first=false; }
-                if (srv->getTCPFlag(TCPService::SYN)) { if (!first) str+=","; str+="SYN"; first=false; }
-                if (srv->getTCPFlag(TCPService::FIN)) { if (!first) str+=","; str+="FIN"; first=false; }
-            }
-        }
+        if (!first) mask_str << ",";
+        mask_str << TCPService::getFlagName(flag);
+        first = false;
     }
-    return str;
+
+    first = true;
+    for (const auto &flag : flags)
+    {
+        if (!first) comp_str << ",";
+        comp_str << TCPService::getFlagName(flag);
+        first = false;
+    }
+
+    return nft_utils::tcpFlagsExpression(mask_str.str(), comp_str.str());
 }
 
 /*
@@ -1070,6 +811,7 @@ string PolicyCompiler_nft::PrintRule::_printSrcService(RuleElementSrv  *rel)
 {
     PolicyCompiler_nft *ipt_comp = dynamic_cast<PolicyCompiler_nft*>(compiler);
     std::ostringstream  ostr;
+    (void)ipt_comp;
 /* I do not want to use rel->getFirst because it traverses the tree to
  * find the object. I'd rather use a cached copy in the compiler
  */
@@ -1081,44 +823,72 @@ string PolicyCompiler_nft::PrintRule::_printSrcService(RuleElementSrv  *rel)
 
     if (rel->size()==1)
     {
-	if (UDPService::isA(srv) || TCPService::isA(srv) ||
-            TagService::isA(srv))
+        if (TCPService::isA(srv) || UDPService::isA(srv))
         {
-	    string str=_printSrcPorts( srv );
-	    if (! str.empty() ) 
+            string str = _printSrcPorts( srv );
+            if (!str.empty())
             {
-                ostr << _printSingleOptionWithNegation(" --sport", rel, str);
+                string proto = TCPService::isA(srv) ? "tcp" : "udp";
+                ostr << proto << " sport " << str << " ";
             }
-	}
+        }
+        if (TCPService::isA(srv))
+        {
+            string str=_printTCPFlags(TCPService::cast(srv));
+            if (!str.empty())
+                ostr << str << " ";
+        }
+        if (ICMPService::isA(srv))
+        {
+            string str = _printICMP( ICMPService::cast(srv) );
+            if (!str.empty())
+                ostr << _printSingleObjectNegation(rel) << str << " ";
+        }
+        if (IPService::isA(srv))
+        {
+            string str = _printIP(IPService::cast(srv), PolicyRule::cast(rel->getParent()));
+            if (! str.empty() )
+                ostr  << _printSingleObjectNegation(rel) << str << " ";
+        }
+        if (CustomService::isA(srv))
+        {
+            ostr << _printSingleObjectNegation(rel) << " "
+                 << CustomService::cast(srv)->getCodeForPlatform( compiler->myPlatformName() ) << " ";
+        }
+        if (TagService::isA(srv))
+        {
+            ostr << nft_utils::markMatchExpression(
+                TagService::constcast(srv)->getCode(),
+                rel->getBool("single_object_negation")) << " ";
+        }
+        if (UserService::isA(srv))
+        {
+            ostr << "meta skuid "
+                 << _printSingleObjectNegation(rel)
+                 << UserService::cast(srv)->getUserId() << " ";
+        }
     } else
     {
-/* use multiport */
-
-	string str;
-	bool  first=true;
-	for (FWObject::iterator i=rel->begin(); i!=rel->end(); i++)
+        string str;
+        for (FWObject::iterator i=rel->begin(); i!=rel->end(); i++)
         {
-	    FWObject *o= *i;
-	    if (FWReference::cast(o)!=nullptr) o=FWReference::cast(o)->getPointer();
+            FWObject *o= *i;
+            if (FWReference::cast(o)!=nullptr) o=FWReference::cast(o)->getPointer();
 
-	    Service *s=Service::cast( o );
-	    assert(s);
-	    if (UDPService::isA(srv) || TCPService::isA(srv))
+            Service *s=Service::cast( o );
+            assert(s);
+            if (UDPService::isA(srv) || TCPService::isA(srv))
             {
-		if (!first) str+=",";
-		str+= _printSrcPorts( s );
-		if (!str.empty()) first=false;
-	    }
-	}
-	if ( !str.empty() ) 
+                string str1 = _printSrcPorts( s );
+                if (str!="" && str1!="") str+=",";
+                str+=str1;
+            }
+        }
+        if ( !str.empty() )
         {
-            if (ipt_comp->newIptables(version))
-                ostr << " --sports ";
-            else
-                ostr << " --source-port ";
-
-	    ostr << str << " ";
-	}
+            string proto = TCPService::isA(srv) ? "tcp" : "udp";
+            ostr << proto << " sport { " << str << " } ";
+        }
     }
     return ostr.str();
 }
@@ -1132,96 +902,78 @@ string PolicyCompiler_nft::PrintRule::_printDstService(RuleElementSrv  *rel)
 
     Service *srv= Service::cast(o);
 
-    if (rel->size()==1) 
+    if (rel->size()==1)
     {
-	if (UDPService::isA(srv) || TCPService::isA(srv))
+        if (UDPService::isA(srv) || TCPService::isA(srv))
         {
-	    string str=_printDstPorts( srv );
-	    if (! str.empty() )
+            string str=_printDstPorts( srv );
+            if (! str.empty() )
             {
-                ostr << _printSingleOptionWithNegation(" --dport", rel, str);
+                string proto = TCPService::isA(srv) ? "tcp" : "udp";
+                ostr << proto << " dport " << str << " ";
             }
-	}
-	if (TCPService::isA(srv)) 
+        }
+        if (TCPService::isA(srv))
         {
-	    string str=_printTCPFlags(TCPService::cast(srv));
-	    if (!str.empty()) 
+            string str=_printTCPFlags(TCPService::cast(srv));
+            if (!str.empty())
+                ostr << str << " ";
+        }
+        if (ICMPService::isA(srv) || ICMP6Service::isA(srv))
+        {
+            string str = _printICMP( ICMPService::cast(srv) );
+            if (!str.empty())
             {
-                ostr << _printSingleOptionWithNegation("", rel, str);
+                if (ipt_comp->ipv6 && str.rfind("icmp", 0) == 0)
+                    str.replace(0, 4, "icmpv6");
+                ostr << _printSingleObjectNegation(rel) << str << " ";
             }
-	}
-	if (ICMPService::isA(srv) || ICMP6Service::isA(srv)) 
+        }
+        if (IPService::isA(srv))
         {
-            string icmp_type_str = 
-                (ipt_comp->ipv6) ? " --icmpv6-type" : " --icmp-type";
-
-	    string str = _printICMP( ICMPService::cast(srv) );
-	    if (str.empty() ) 
-            {
-                // module icmp6 does not like "--icmp6-type any"
-                if ((version.empty() ||
-                     XMLTools::version_compare(version, "1.2.6")>0) &&
-                    !ipt_comp->ipv6)
-                    ostr << icmp_type_str << " any ";
-            } else
-            {
-                ostr << _printSingleOptionWithNegation(icmp_type_str, rel, str);
-            }
-	}
-	if (IPService::isA(srv)) 
-        {
-	    string str = _printIP(IPService::cast(srv), PolicyRule::cast(rel->getParent()));
-	    if (! str.empty() ) 
-            {
+            string str = _printIP(IPService::cast(srv), PolicyRule::cast(rel->getParent()));
+            if (! str.empty() )
                 ostr  << _printSingleObjectNegation(rel) << str << " ";
-            }
-	}
-	if (CustomService::isA(srv)) 
+        }
+        if (CustomService::isA(srv))
         {
-	    ostr << _printSingleObjectNegation(rel) << " "
+            ostr << _printSingleObjectNegation(rel) << " "
                  << CustomService::cast(srv)->getCodeForPlatform( compiler->myPlatformName() ) << " ";
-	}
+        }
         if (TagService::isA(srv))
         {
-	    ostr << "-m mark "
-                 << _printSingleObjectNegation(rel) 
-                 << "--mark "
-                 << TagService::constcast(srv)->getCode() << " ";
+            ostr << nft_utils::markMatchExpression(
+                TagService::constcast(srv)->getCode(),
+                rel->getBool("single_object_negation")) << " ";
         }
         if (UserService::isA(srv))
         {
-	    ostr << "-m owner "
+            ostr << "meta skuid "
                  << _printSingleObjectNegation(rel)
-                 << "--uid-owner "
                  << UserService::cast(srv)->getUserId() << " ";
         }
-    } else 
+    } else
     {
-/* use multiport */
-
-	string str;
-	for (FWObject::iterator i=rel->begin(); i!=rel->end(); i++) 
+        string str;
+        for (FWObject::iterator i=rel->begin(); i!=rel->end(); i++)
         {
-	    FWObject *o= *i;
-	    if (FWReference::cast(o)!=nullptr) o=FWReference::cast(o)->getPointer();
+            FWObject *o= *i;
+            if (FWReference::cast(o)!=nullptr) o=FWReference::cast(o)->getPointer();
 
-	    Service *s=Service::cast( o );
-	    assert(s);
-	    if (UDPService::isA(srv) || TCPService::isA(srv)) 
+            Service *s=Service::cast( o );
+            assert(s);
+            if (UDPService::isA(srv) || TCPService::isA(srv))
             {
-		string str1 = _printDstPorts( s );
+                string str1 = _printDstPorts( s );
                 if (str!="" && str1!="") str+=",";
                 str+=str1;
-	    }
-	}
-	if ( !str.empty() ) 
+            }
+        }
+        if ( !str.empty() )
         {
-            if (ipt_comp->newIptables(version))
-                ostr << " --dports ";
-            else
-                ostr << " --destination-port ";
-	    ostr << str << " ";
-	}
+            string proto = TCPService::isA(srv) ? "tcp" : "udp";
+            ostr << proto << " dport { " << str << " } ";
+        }
     }
     return ostr.str();
 }
@@ -1238,11 +990,15 @@ string PolicyCompiler_nft::PrintRule::_printSrcAddr(RuleElement *rel, Address  *
 
         if (range_start != range_end)
         {
-            if (!have_m_iprange) { res = "-m iprange "; have_m_iprange = true; }
-            res += _printSingleObjectNegation(rel) + "--src-range ";
-            res += range_start.toString() + "-" + range_end.toString() + " ";
+            res += _printSingleOptionWithNegation(
+                ipt_comp->ipv6 ? "ip6 saddr" : "ip saddr",
+                rel,
+                range_start.toString() + "-" + range_end.toString());
         } else
-            res += "-s " + range_start.toString() + " ";
+            res += _printSingleOptionWithNegation(
+                ipt_comp->ipv6 ? "ip6 saddr" : "ip saddr",
+                rel,
+                range_start.toString());
 
         return res;
     }
@@ -1254,7 +1010,8 @@ string PolicyCompiler_nft::PrintRule::_printSrcAddr(RuleElement *rel, Address  *
         return _printIpSetMatch(o, rel);
     }
 
-    return _printSingleOptionWithNegation(" -s", rel, _printAddr(o));
+    return _printSingleOptionWithNegation(
+        ipt_comp->ipv6 ? "ip6 saddr" : "ip saddr", rel, _printAddr(o));
 }
 
 string PolicyCompiler_nft::PrintRule::_printDstAddr(RuleElement *rel, Address  *o)
@@ -1268,11 +1025,15 @@ string PolicyCompiler_nft::PrintRule::_printDstAddr(RuleElement *rel, Address  *
         const InetAddr &range_end = ar->getRangeEnd();
         if (range_start != range_end)
         {
-            if (!have_m_iprange) { res = "-m iprange "; have_m_iprange = true; }
-            res += _printSingleObjectNegation(rel) + "--dst-range ";
-            res += range_start.toString() + "-" + range_end.toString() + " ";
+            res += _printSingleOptionWithNegation(
+                ipt_comp->ipv6 ? "ip6 daddr" : "ip daddr",
+                rel,
+                range_start.toString() + "-" + range_end.toString());
         } else
-            res += "-d " + range_start.toString() + " ";
+            res += _printSingleOptionWithNegation(
+                ipt_comp->ipv6 ? "ip6 daddr" : "ip daddr",
+                rel,
+                range_start.toString());
 
         return res;
     }
@@ -1284,7 +1045,8 @@ string PolicyCompiler_nft::PrintRule::_printDstAddr(RuleElement *rel, Address  *
         return _printIpSetMatch(o, rel);
     }
 
-    return _printSingleOptionWithNegation(" -d", rel, _printAddr(o));
+    return _printSingleOptionWithNegation(
+        ipt_comp->ipv6 ? "ip6 daddr" : "ip daddr", rel, _printAddr(o));
 }
 
 string PolicyCompiler_nft::PrintRule::_printIpSetMatch(Address *o, RuleElement *rel)
@@ -1292,20 +1054,15 @@ string PolicyCompiler_nft::PrintRule::_printIpSetMatch(Address *o, RuleElement *
     PolicyCompiler_nft *ipt_comp=dynamic_cast<PolicyCompiler_nft*>(compiler);
     string set_name =
         dynamic_cast<OSConfigurator_linux24*>(ipt_comp->osconfigurator)->normalizeSetName(o->getName());
-    string suffix = "dst";
-    if (RuleElementSrc::isA(rel)) suffix = "src";
-    if (RuleElementDst::isA(rel)) suffix = "dst";
+    string direction = "daddr";
+    if (RuleElementSrc::isA(rel)) direction = "saddr";
+    if (RuleElementDst::isA(rel)) direction = "daddr";
 
-    string set_match_option;
-    if (XMLTools::version_compare(version, "1.4.4")>=0)
-        set_match_option = "--match-set";
-    else
-        set_match_option = "--set";
-
-    string set_match = set_match_option + " " + set_name + " " + suffix;
-    ostringstream ostr;
-    ostr << "-m set " << _printSingleOptionWithNegation("", rel, set_match);
-    return ostr.str();
+    return nft_utils::setMatchExpression(
+        ipt_comp->ipv6 ? "ip6" : "ip",
+        direction,
+        set_name,
+        rel->getBool("single_object_negation")) + " ";
 }
 
 string PolicyCompiler_nft::PrintRule::_printAddr(Address  *o)
@@ -1386,8 +1143,6 @@ string PolicyCompiler_nft::PrintRule::_printAddr(Address  *o)
 
 string PolicyCompiler_nft::PrintRule::_printTimeInterval(PolicyRule *r)
 {
-    std::ostringstream  ostr;
-
     RuleElementInterval* ri=r->getWhen();
     if (ri==nullptr || ri->isAny()) return "";
 
@@ -1419,113 +1174,34 @@ string PolicyCompiler_nft::PrintRule::_printTimeInterval(PolicyRule *r)
     if (ehour<0) ehour=23;
     if (emin<0)  emin=59;
 
-    ostr << "-m time ";
+    std::ostringstream start;
+    std::ostringstream stop;
 
-    bool use_timestart_timestop = true;
+    start << setw(2) << setfill('0') << shour << ":" << setw(2) << setfill('0') << smin;
+    stop << setw(2) << setfill('0') << ehour << ":" << setw(2) << setfill('0') << emin;
 
-    if (XMLTools::version_compare(version, "1.4.0")>=0)
+    std::string days;
+    if (!days_of_week.empty() && days_of_week != "0,1,2,3,4,5,6")
     {
-        /* in 1.4.0 date format has changed, it is now ISO 8601
-         * http://www.w3.org/TR/NOTE-datetime
-         *
-         * --datestart YYYY[-MM[-DD[Thh[:mm[:ss]]]]]
-         *
-         * --datestop YYYY[-MM[-DD[Thh[:mm[:ss]]]]]
-         */
-        if (sday>0 && smonth>0 && syear>0)
+        istringstream istr(days_of_week);
+        bool first = true;
+        while (!istr.eof())
         {
-            ostr << "--datestart " 
-                 << setw(2) << setfill('0') << syear << "-" 
-                 << setw(2) << setfill('0') << smonth << "-" 
-                 << setw(2) << setfill('0') << sday  << "T"
-                 << setw(2) << setfill('0') << shour << ":"
-                 << setw(2) << setfill('0') << smin << ":00 ";
-            use_timestart_timestop = false;
+            int d;
+            istr >> d;
+            if (!first) days += ",";
+            first = false;
+            days += daysofweek[d];
+            char sep;
+            istr >> sep;
         }
-
-        if (eday>0 && emonth>0 && eyear>0)
-        {
-            ostr << "--datestop "
-                 << setw(2) << setfill('0') << eyear << "-"
-                 << setw(2) << setfill('0') << emonth << "-"
-                 << setw(2) << setfill('0') << eday  << "T"
-                 << setw(2) << setfill('0') << ehour << ":"
-                 << setw(2) << setfill('0') << emin << ":00 ";
-            use_timestart_timestop = false;
-        }
-
-        if (use_timestart_timestop)
-        {
-            ostr << " --timestart "
-                 << setw(2) << setfill('0') << shour << ":"
-                 << setw(2) << setfill('0') << smin  << " ";
-
-            ostr << " --timestop "
-                 << setw(2) << setfill('0') << ehour << ":"
-                 << setw(2) << setfill('0') << emin  << " ";
-        }
-
-        if (!days_of_week.empty() && days_of_week != "0,1,2,3,4,5,6")
-        {
-            ostr << " --weekdays ";
-            istringstream istr(days_of_week);
-            bool first= true;
-            while (!istr.eof())
-            {
-                if (!first) ostr << ',';
-                first = false;
-                int d;
-                istr >> d;
-                ostr << daysofweek[d];
-                char sep;
-                istr >> sep;
-            }
-        }
-
-        if ( (XMLTools::version_compare(version, "1.4.11") >=0 ) && compiler->getCachedFwOpt()->getBool("use_kerneltz")) {
-            ostr << " --kerneltz";
-        }
-
-    } else
-    {
-        /* "old" iptables time module
-
-TIME v1.2.11 options:
- --timestart value --timestop value --days listofdays
-          timestart value : HH:MM
-          timestop  value : HH:MM
-          listofdays value: a list of days to apply -> ie. Mon,Tue,Wed,Thu,Fri.
-          Case sensitive
-
-         */
-
-        ostr << " --timestart "
-             << setw(2) << setfill('0') << shour << ":"
-             << setw(2) << setfill('0') << smin  << " ";
-
-        ostr << " --timestop "
-             << setw(2) << setfill('0') << ehour << ":"
-             << setw(2) << setfill('0') << emin  << " ";
-
-        if (!days_of_week.empty() && days_of_week != "0,1,2,3,4,5,6")
-        {
-            ostr << " --days ";
-            istringstream istr(days_of_week);
-            bool first= true;
-            while (!istr.eof())
-            {
-                if (!first) ostr << ',';
-                first = false;
-                int d;
-                istr >> d;
-                ostr << daysofweek[d];
-                char sep;
-                istr >> sep;
-            }
-        }
-
     }
-    return ostr.str();
+
+    return nft_utils::timeMatchExpression(
+        start.str(),
+        stop.str(),
+        days,
+        compiler->getCachedFwOpt()->getBool("use_kerneltz"));
 }
 
 PolicyCompiler_nft::PrintRule::PrintRule(const std::string &name) :
@@ -1679,17 +1355,8 @@ string PolicyCompiler_nft::PrintRule::PolicyRuleToString(PolicyRule *rule)
 */
     if (!ruleopt->getBool("stateless") || rule->getBool("force_state_check") )
     {
-        string state_module_option;
-        /*
-         * But not, when the line already contains a state matching
-         */
-        if (XMLTools::version_compare(version, "1.4.4")>=0)
-            state_module_option = "conntrack --ctstate";
-        else
-            state_module_option = "state --state";
-
-        if (command_line.str().find("-m " + state_module_option, 0) == string::npos)
-            command_line << " -m " << state_module_option << " NEW ";
+        if (command_line.str().find("ct state", 0) == string::npos)
+            command_line << " " << nft_utils::conntrackStateExpression("new", false) << " ";
     }
 
     command_line << _printTimeInterval(rule);
@@ -1915,5 +1582,3 @@ string PolicyCompiler_nft::PrintRule::_quote(const string &s)
 {
     return "\"" + s + "\"";
 }
-
-

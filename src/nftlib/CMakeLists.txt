@@ -15,6 +15,7 @@ set(nftlib_srcs
     NATCompiler_PrintRule_nft.cpp
     NATCompiler_PrintRuleNftRst.cpp
     NATCompiler_PrintRuleNftRstEcho.cpp
+    nft_utils.cpp
     RoutingCompiler_nft.cpp
     RoutingCompiler_nft_writers.cpp)
 

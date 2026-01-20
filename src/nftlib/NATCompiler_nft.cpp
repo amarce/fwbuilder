@@ -2619,16 +2619,7 @@ void NATCompiler_nft::compile()
 
     add( new countChainUsage("Count chain usage"));
 
-    if (useNftablesAtomic(fwopt))
-    {
-        // bug #1812295: we should use PrintRuleIptRstEcho not only
-        // when we have dynamic interfaces, but also when we have
-        // address tables expanded at run time. Instead of checking
-        // for all these conditions, just always use PrintRuleIptRstEcho
-        printRule=new PrintRuleIptRstEcho(
-            "generate code for iptables-restore using echo");
-    } else
-        printRule=new PrintRule("generate iptables shell script");
+    printRule=new PrintRule("generate nftables rules");
 
     printRule->setContext(this);
     printRule->initialize();
@@ -2652,16 +2643,7 @@ void NATCompiler_nft::epilog()
 
 string NATCompiler_nft::flushAndSetDefaultPolicy()
 {
-    string res="";
-
-    if (useNftablesAtomic(fwopt) && ! inSingleRuleCompileMode())
-    {
-        res += "echo :PREROUTING ACCEPT [0:0]\n";
-        res += "echo :POSTROUTING ACCEPT [0:0]\n";
-        res += "echo :OUTPUT ACCEPT [0:0]\n";
-    }
-
-    return res;
+    return "";
 }
 
 string NATCompiler_nft::printAutomaticRules()
