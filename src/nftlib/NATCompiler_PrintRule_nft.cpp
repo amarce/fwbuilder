@@ -46,6 +46,9 @@
 
 #include "combinedAddress.h"
 
+#include "nft_utils.h"
+#include "nftables_options.h"
+
 #include <assert.h>
 
 #include <QString>
@@ -71,19 +74,9 @@ using namespace std;
 string NATCompiler_nft::PrintRule::_printSingleOptionWithNegation(
     const string &option, RuleElement *rel, const string &arg)
 {
-    ostringstream ostr;
-    if (XMLTools::version_compare(version, "1.4.3")>=0)
-    {
-        ostr  << _printSingleObjectNegation(rel);
-        ostr << option << " ";
-        ostr << arg << " ";
-    } else
-    {
-        ostr << option << " ";
-        ostr  << _printSingleObjectNegation(rel);
-        ostr << arg << " ";
-    }
-    return ostr.str();
+    if (rel->getBool("single_object_negation"))
+        return option + " != " + arg + " ";
+    return option + " " + arg + " ";
 }
 
 void NATCompiler_nft::PrintRule::initializeMinusNTracker()
@@ -121,15 +114,18 @@ string NATCompiler_nft::PrintRule::_createChain(const string &chain)
 
     if ( ipt_comp->minus_n_commands->count(chain)==0 )
     {
-        string opt_wait;
-
-        if (XMLTools::version_compare(version, "1.4.20")>=0)
-            opt_wait = "-w ";
-        else
-            opt_wait = "";
-
-        string ipt_cmd = (ipt_comp->ipv6) ? "$IP6TABLES " : "$IPTABLES ";
-	res << ipt_cmd << opt_wait << "-t nat -N " << chain << endl;
+        bool atomic = useNftablesAtomic(compiler->getCachedFwOpt());
+        string prefix = nft_utils::commandPrefix(atomic);
+        string base_chain = nft_utils::baseChainDefinition(
+            "nat", chain, ipt_comp->ipv6, "");
+        if (!base_chain.empty())
+        {
+            res << prefix << base_chain << endl;
+        } else
+        {
+            res << prefix << "add chain " << nft_utils::familyName(ipt_comp->ipv6)
+                << " nat " << chain << endl;
+        }
 	(*(ipt_comp->minus_n_commands))[chain] = true;
     }
     return res.str();
@@ -138,16 +134,9 @@ string NATCompiler_nft::PrintRule::_createChain(const string &chain)
 string NATCompiler_nft::PrintRule::_startRuleLine()
 {
     NATCompiler_nft *ipt_comp = dynamic_cast<NATCompiler_nft*>(compiler);
-    string res = (ipt_comp->ipv6) ? "$IP6TABLES " : "$IPTABLES ";
-
-    string opt_wait;
-
-    if (XMLTools::version_compare(version, "1.4.20")>=0)
-        opt_wait = "-w ";
-    else
-        opt_wait = "";
-
-    return res + opt_wait + string("-t nat -A ");
+    bool atomic = useNftablesAtomic(compiler->getCachedFwOpt());
+    string prefix = nft_utils::commandPrefix(atomic);
+    return prefix + "add rule " + nft_utils::familyName(ipt_comp->ipv6) + " nat ";
 }
 
 string NATCompiler_nft::PrintRule::_endRuleLine()
@@ -234,14 +223,16 @@ string NATCompiler_nft::PrintRule::_printChainDirectionAndInterface(NATRule *rul
 
     if ( ! iface_in_name.isEmpty())
     {
+        string iface_literal = "\"" + iface_in_name.toStdString() + "\"";
         res << _printSingleOptionWithNegation(
-            "-i", itf_in_re, iface_in_name.toStdString()).c_str();
+            "iifname", itf_in_re, iface_literal).c_str();
     }
 
     if ( ! iface_out_name.isEmpty())
     {
+        string iface_literal = "\"" + iface_out_name.toStdString() + "\"";
         res << _printSingleOptionWithNegation(
-            "-o", itf_out_re, iface_out_name.toStdString()).c_str();
+            "oifname", itf_out_re, iface_literal).c_str();
     }
 
     res << "";
@@ -252,6 +243,7 @@ string NATCompiler_nft::PrintRule::_printChainDirectionAndInterface(NATRule *rul
 string NATCompiler_nft::PrintRule::_printProtocol(Service *srv)
 {
     std::ostringstream  ostr;
+    NATCompiler_nft *ipt_comp = dynamic_cast<NATCompiler_nft*>(compiler);
     // CustomService returns protocol name starting with v3.0.4
     // However CustomService can return protocol name "any", which we should
     // just skip.
@@ -270,21 +262,19 @@ string NATCompiler_nft::PrintRule::_printProtocol(Service *srv)
     if (!srv->isAny() && !TagService::isA(srv) && !UserService::isA(srv))
     {
         string pn = srv->getProtocolName();
-        if (pn=="ip") pn="all";
-        ostr << "-p " <<  pn << " ";
-        if (pn == "tcp")  ostr << "-m tcp ";
-        if (pn == "udp")  ostr << "-m udp ";
-        if (pn == "icmp") ostr << "-m icmp ";
+        if (pn=="ip" || pn=="any") return "";
+        if (ipt_comp->ipv6)
+            ostr << "ip6 nexthdr " << pn << " ";
+        else
+            ostr << "ip protocol " << pn << " ";
     }
     return ostr.str();
 }
 
 string NATCompiler_nft::PrintRule::_printMultiport(NATRule *rule)
 {
-    std::ostringstream  ostr;
-    if( rule->getBool("ipt_multiport"))
-	ostr << "-m multiport ";
-    return ostr.str();
+    (void)rule;
+    return "";
 }
 
 
@@ -298,9 +288,9 @@ string NATCompiler_nft::PrintRule::_printOPorts(int rs,int re)
     if (rs>0 || re>0) {
 	if (rs==re)  ostr << rs;
 	else
-	    if (rs==0 && re!=0)      ostr << ":" << re;
+	    if (rs==0 && re!=0)      ostr << "0-" << re;
 	    else
-                ostr << rs << ":" << re;
+                ostr << rs << "-" << re;
     }
     return ostr.str();
 }
@@ -326,9 +316,10 @@ string NATCompiler_nft::PrintRule::_printICMP(ICMPService *srv)
 {
     std::ostringstream  ostr;
     if (ICMPService::isA(srv) && srv->getInt("type")!=-1) {
-	ostr << srv->getStr("type");
+	ostr << "icmp type " << srv->getStr("type");
 	if (srv->getInt("code")!=-1)
-	    ostr << "/" << srv->getStr("code") << " ";
+	    ostr << " code " << srv->getStr("code");
+        ostr << " ";
     }
     return ostr.str();
 }
@@ -414,36 +405,34 @@ string NATCompiler_nft::PrintRule::_printSrcService(RuleElementOSrv  *rel)
     Service *srv= Service::cast(o);
 
     if (rel->size()==1) {
-	if (UDPService::isA(srv) || TCPService::isA(srv)) {
-	    string str=_printSrcPorts( srv );
-	    if (! str.empty() ) ostr << "--sport " << str << " ";
-	}
+        if (UDPService::isA(srv) || TCPService::isA(srv)) {
+            string str=_printSrcPorts( srv );
+            if (! str.empty() )
+            {
+                string proto = TCPService::isA(srv) ? "tcp" : "udp";
+                ostr << proto << " sport " << str << " ";
+            }
+        }
     } else {
-/* use multiport */
+        string str;
+        bool  first=true;
+        for (FWObject::iterator i=rel->begin(); i!=rel->end(); i++) {
+            FWObject *o= *i;
+            if (FWReference::cast(o)!=nullptr) o=FWReference::cast(o)->getPointer();
 
-	string str;
-	bool  first=true;
-	for (FWObject::iterator i=rel->begin(); i!=rel->end(); i++) {
-	    FWObject *o= *i;
-	    if (FWReference::cast(o)!=nullptr) o=FWReference::cast(o)->getPointer();
-
-	    Service *s=Service::cast( o );
-	    assert(s);
-	    if (UDPService::isA(srv) || TCPService::isA(srv)) {
-		if (!first) str+=",";
-		str+= _printSrcPorts( s );
-		if (!str.empty()) first=false;
-	    }
-	}
-	if ( !str.empty() )
+            Service *s=Service::cast( o );
+            assert(s);
+            if (UDPService::isA(srv) || TCPService::isA(srv)) {
+                if (!first) str+=",";
+                str+= _printSrcPorts( s );
+                if (!str.empty()) first=false;
+            }
+        }
+        if ( !str.empty() )
         {
-            if (version.empty() || version=="ge_1.2.6" ||
-                XMLTools::version_compare(version, "1.2.6")>=0)
-                ostr << "--sports ";
-            else
-                ostr << "--source-port ";
-	    ostr << str << " ";
-	}
+            string proto = TCPService::isA(srv) ? "tcp" : "udp";
+            ostr << proto << " sport { " << str << " } ";
+        }
     }
     return ostr.str();
 }
@@ -460,59 +449,57 @@ string NATCompiler_nft::PrintRule::_printDstService(RuleElementOSrv  *rel)
 
     if (rel->size()==1)
     {
-	if (UDPService::isA(srv) || TCPService::isA(srv))
+        if (UDPService::isA(srv) || TCPService::isA(srv))
         {
-	    string str=_printDstPorts( srv );
-	    if (! str.empty() ) ostr << "--dport " << str << " ";
-	}
-	if (ICMPService::isA(srv))
+            string str=_printDstPorts( srv );
+            if (! str.empty() )
+            {
+                string proto = TCPService::isA(srv) ? "tcp" : "udp";
+                ostr << proto << " dport " << str << " ";
+            }
+        }
+        if (ICMPService::isA(srv))
         {
-	    string str=_printICMP( ICMPService::cast(srv) );
-	    if (! str.empty() ) ostr << "--icmp-type " << str << " ";
-	}
-	if (IPService::isA(srv))
+            string str=_printICMP( ICMPService::cast(srv) );
+            if (! str.empty() ) ostr << str << " ";
+        }
+        if (IPService::isA(srv))
         {
-	    string str=_printIP( IPService::cast(srv) );
-	    if (! str.empty() ) ostr << str << " ";
-	}
-	if (CustomService::isA(srv))
+            string str=_printIP( IPService::cast(srv) );
+            if (! str.empty() ) ostr << str << " ";
+        }
+        if (CustomService::isA(srv))
         {
-	    ostr << CustomService::cast(srv)->getCodeForPlatform( compiler->myPlatformName() ) << " ";
-	}
+            ostr << CustomService::cast(srv)->getCodeForPlatform( compiler->myPlatformName() ) << " ";
+        }
         if (TagService::isA(srv))
         {
-	    ostr << "-m mark --mark "
-                 << TagService::constcast(srv)->getCode() << " ";
+            ostr << nft_utils::markMatchExpression(
+                TagService::constcast(srv)->getCode(), false) << " ";
         }
 
     } else {
-/* use multiport */
-
-	string str;
-	bool   first=true;
-	for (FWObject::iterator i=rel->begin(); i!=rel->end(); i++)
+        string str;
+        bool   first=true;
+        for (FWObject::iterator i=rel->begin(); i!=rel->end(); i++)
         {
-	    FWObject *o= *i;
-	    if (FWReference::cast(o)!=nullptr) o=FWReference::cast(o)->getPointer();
+            FWObject *o= *i;
+            if (FWReference::cast(o)!=nullptr) o=FWReference::cast(o)->getPointer();
 
-	    Service *s=Service::cast( o );
-	    assert(s);
-	    if (UDPService::isA(srv) || TCPService::isA(srv))
+            Service *s=Service::cast( o );
+            assert(s);
+            if (UDPService::isA(srv) || TCPService::isA(srv))
             {
-		if (!first) str+=",";
-		str+= _printDstPorts( s );
-		if (!str.empty()) first=false;
-	    }
-	}
-	if ( !str.empty() )
+                if (!first) str+=",";
+                str+= _printDstPorts( s );
+                if (!str.empty()) first=false;
+            }
+        }
+        if ( !str.empty() )
         {
-            if (version.empty() || version=="ge_1.2.6" ||
-                XMLTools::version_compare(version, "1.2.6")>=0)
-                ostr << "--dports ";
-            else
-                ostr << "--destination-port ";
-	    ostr << str << " ";
-	}
+            string proto = TCPService::isA(srv) ? "tcp" : "udp";
+            ostr << proto << " dport { " << str << " } ";
+        }
     }
     return ostr.str();
 }
@@ -522,20 +509,15 @@ string NATCompiler_nft::PrintRule::_printIpSetMatch(Address  *o, RuleElement *re
     NATCompiler_nft *ipt_comp=dynamic_cast<NATCompiler_nft*>(compiler);
     string set_name =
         dynamic_cast<OSConfigurator_linux24*>(ipt_comp->osconfigurator)->normalizeSetName(o->getName());
-    string suffix = "dst";
-    if (RuleElementOSrc::isA(rel)) suffix = "src";
-    if (RuleElementODst::isA(rel)) suffix = "dst";
+    string direction = "daddr";
+    if (RuleElementOSrc::isA(rel)) direction = "saddr";
+    if (RuleElementODst::isA(rel)) direction = "daddr";
 
-    string set_match_option;
-    if (XMLTools::version_compare(version, "1.4.4")>=0)
-        set_match_option = "--match-set";
-    else
-        set_match_option = "--set";
-
-    string set_match = set_match_option + " " + set_name + " " + suffix;
-    ostringstream ostr;
-    ostr << "-m set " << _printSingleOptionWithNegation("", rel, set_match);
-    return ostr.str();
+    return nft_utils::setMatchExpression(
+        ipt_comp->ipv6 ? "ip6" : "ip",
+        direction,
+        set_name,
+        rel->getBool("single_object_negation")) + " ";
 }
 
 // Note print_mask is true by default, print_range is false by default.
@@ -616,7 +598,7 @@ string NATCompiler_nft::PrintRule::_printAddr(Address  *o,
 string NATCompiler_nft::PrintRule::_printSingleObjectNegation(
     RuleElement *rel)
 {
-    if (rel->getBool("single_object_negation"))   return "! ";
+    if (rel->getBool("single_object_negation"))   return "not ";
     else return "";
 }
 
@@ -857,5 +839,3 @@ string NATCompiler_nft::PrintRule::_quote(const string &s)
 {
     return "\"" + s + "\"";
 }
-
-

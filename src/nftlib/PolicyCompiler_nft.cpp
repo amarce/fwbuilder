@@ -4862,18 +4862,7 @@ void PolicyCompiler_nft::epilog()
 PolicyCompiler_nft::PrintRule* PolicyCompiler_nft::createPrintRuleProcessor()
 {
     PolicyCompiler_nft::PrintRule* print_rule = nullptr;
-    if (useNftablesAtomic(fw->getOptionsObject()))
-    {
-        // bug #1812295: we should use PrintRuleIptRstEcho not only
-        // when we have dynamic interfaces, but also when we have
-        // address tables expanded at run time. Instead of checking
-        // for all these conditions, just always use PrintRuleIptRstEcho
-        print_rule = new PrintRuleIptRstEcho(
-            "generate code for iptables-restore using echo");
-    } else
-    {
-        print_rule = new PrintRule("generate shell script");
-    }
+    print_rule = new PrintRule("generate nftables rules");
     print_rule->setContext(this);
     print_rule->initialize();
 
@@ -4882,15 +4871,7 @@ PolicyCompiler_nft::PrintRule* PolicyCompiler_nft::createPrintRuleProcessor()
 
 string PolicyCompiler_nft::flushAndSetDefaultPolicy()
 {
-    string res = "";
-
-    if (!inSingleRuleCompileMode() && useNftablesAtomic(fwopt))
-    {
-        res += "echo :INPUT DROP [0:0]\n";
-        res += "echo :FORWARD DROP [0:0]\n";
-        res += "echo :OUTPUT DROP [0:0]\n";
-    }
-    return res;
+    return "";
 }
 
 std::string PolicyCompiler_nft::printAutomaticRules()
