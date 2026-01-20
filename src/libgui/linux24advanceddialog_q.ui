@@ -826,6 +826,32 @@
        <item row="3" column="1" colspan="2">
         <widget class="QLineEdit" name="linux24_path_ip6tables"/>
        </item>
+       <item row="14" column="0">
+        <widget class="QLabel" name="label_nftables_path">
+         <property name="text">
+          <string>nft:</string>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+         </property>
+       </widget>
+      </item>
+       <item row="14" column="1" colspan="2">
+        <widget class="QLineEdit" name="nftables_path"/>
+       </item>
+       <item row="15" column="0">
+        <widget class="QLabel" name="label_nftables_conf_path">
+         <property name="text">
+          <string>nftables.conf:</string>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+         </property>
+       </widget>
+      </item>
+       <item row="15" column="1" colspan="2">
+        <widget class="QLineEdit" name="nftables_conf_path"/>
+       </item>
        <item row="4" column="0">
         <widget class="QLabel" name="label454">
          <property name="text">
@@ -983,7 +1009,7 @@
        <item row="13" column="1" colspan="2">
         <widget class="QLineEdit" name="linux24_path_ip6tables_restore"/>
        </item>
-       <item row="14" column="2">
+       <item row="16" column="2">
         <spacer>
          <property name="orientation">
           <enum>Qt::Vertical</enum>
@@ -1371,6 +1397,8 @@ Explanation of this parameter can be found at&lt;br&gt;
   <tabstop>linux24_tcp_timestamps</tabstop>
   <tabstop>linux24_path_iptables</tabstop>
   <tabstop>linux24_path_ip6tables</tabstop>
+  <tabstop>nftables_path</tabstop>
+  <tabstop>nftables_conf_path</tabstop>
   <tabstop>linux24_path_ip</tabstop>
   <tabstop>linux24_path_logger</tabstop>
   <tabstop>linux24_path_vconfig</tabstop>

@@ -25,6 +25,7 @@
 
 #include "NATCompiler_nft.h"
 #include "OSConfigurator_linux24.h"
+#include "nftables_options.h"
 #include "ipt_utils.h"
 
 #include "combinedAddress.h"
@@ -2618,7 +2619,7 @@ void NATCompiler_nft::compile()
 
     add( new countChainUsage("Count chain usage"));
 
-    if (fwopt->getBool("use_iptables_restore"))
+    if (useNftablesAtomic(fwopt))
     {
         // bug #1812295: we should use PrintRuleIptRstEcho not only
         // when we have dynamic interfaces, but also when we have
@@ -2641,7 +2642,7 @@ void NATCompiler_nft::compile()
 
 void NATCompiler_nft::epilog()
 {
-    if (fwopt->getBool("use_iptables_restore") &&
+    if (useNftablesAtomic(fwopt) &&
         getCompiledScriptLength()>0 &&
         ! inSingleRuleCompileMode())
     {
@@ -2653,7 +2654,7 @@ string NATCompiler_nft::flushAndSetDefaultPolicy()
 {
     string res="";
 
-    if (fwopt->getBool("use_iptables_restore") && ! inSingleRuleCompileMode())
+    if (useNftablesAtomic(fwopt) && ! inSingleRuleCompileMode())
     {
         res += "echo :PREROUTING ACCEPT [0:0]\n";
         res += "echo :POSTROUTING ACCEPT [0:0]\n";
@@ -2687,4 +2688,3 @@ list<string> NATCompiler_nft::getUsedChains()
         res.push_back(it->first);
     return res;
 }
-

@@ -46,8 +46,10 @@
 #include "RoutingCompiler_nft.h"
 #include "Preprocessor_ipt.h"
 #include "OSConfigurator_linux24.h"
+#include "OSConfigurator_linux24_nft.h"
 #include "OSConfigurator_secuwall.h"
 #include "OSConfigurator_ipcop.h"
+#include "nftables_options.h"
 #include "combinedAddress.h"
 #include "AutomaticRules_ipt.h"
 
@@ -145,10 +147,10 @@ QString CompilerDriver_nft::run(const std::string &cluster_id,
         current_firewall_name = fw->getName().c_str();
 
         if (fw->getOptionsObject()->getStr("prolog_place") == "after_flush" &&
-            fw->getOptionsObject()->getBool("use_iptables_restore"))
+            useNftablesAtomic(fw->getOptionsObject()))
         {
             abort("Prolog place \"after policy reset\" can not be used"
-                  " when policy is activated with iptables-restore");
+                  " when policy is activated with nftables in atomic mode");
         }
 
         string firewall_dir = options->getStr("firewall_dir");
@@ -180,14 +182,8 @@ QString CompilerDriver_nft::run(const std::string &cluster_id,
         {
             os_variant = "ipcop";
 
-            // can't use iptables-restore with ipcop
-            fw->getOptionsObject()->setBool("use_iptables_restore", false);
-            // ipcop has its own iptables commands that accept packets
-            // in states ESTABLISHED,RELATED
-            fw->getOptionsObject()->setBool("accept_established", false);
-
             oscnf = std::unique_ptr<OSConfigurator_linux24>(
-                new OSConfigurator_ipcop(objdb , fw, false));
+                new OSConfigurator_linux24_nft(objdb , fw, false));
         }
 
         if (os_family == "linux24" ||
@@ -197,11 +193,11 @@ QString CompilerDriver_nft::run(const std::string &cluster_id,
             os_family == "dd-wrt-jffs" ||
             os_family == "sveasoft")
             oscnf = std::unique_ptr<OSConfigurator_linux24>(
-                new OSConfigurator_linux24(objdb , fw, false));
+                new OSConfigurator_linux24_nft(objdb , fw, false));
 
         if (os_family == "secuwall")
             oscnf = std::unique_ptr<OSConfigurator_linux24>(
-                new OSConfigurator_secuwall(objdb , fw, false));
+                new OSConfigurator_linux24_nft(objdb , fw, false));
 
         if (oscnf.get()==nullptr)
         {
@@ -605,8 +601,8 @@ QString CompilerDriver_nft::run(const std::string &cluster_id,
          */
         if (!prolog_done &&
             (prolog_place == "top" ||
-             (prolog_place == "after_flush" && 
-              fw->getOptionsObject()->getBool("use_iptables_restore"))))
+             (prolog_place == "after_flush" &&
+              useNftablesAtomic(fw->getOptionsObject()))))
         {
             script_skeleton.setVariable("prolog_top", 1);
             script_skeleton.setVariable("prolog_after_interfaces", 0);
@@ -673,11 +669,10 @@ QString CompilerDriver_nft::run(const std::string &cluster_id,
          * added in PolicyCompiler_nft::flushAndSetDefaultPolicy()
          */
         script_skeleton.setVariable("not_using_iptables_restore",
-                                    ! fw->getOptionsObject()->getBool("use_iptables_restore"));
+                                    !useNftablesAtomic(fw->getOptionsObject()));
 
         script_buffer = "";
-        if (have_ipv4) script << "  reset_iptables_v4" << '\n';
-        if (have_ipv6) script << "  reset_iptables_v6" << '\n';
+        if (have_ipv4 || have_ipv6) script << "  reset_nftables" << '\n';
         script_skeleton.setVariable("reset_all", script_buffer);
 
         script_buffer = "";
@@ -812,5 +807,3 @@ QString CompilerDriver_nft::run(const std::string &cluster_id,
     
     return "";
 }
-
-

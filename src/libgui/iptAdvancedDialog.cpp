@@ -67,6 +67,8 @@ iptAdvancedDialog::iptAdvancedDialog(QWidget *parent,FWObject *o)
     string description = Resources::platform_res[platform]->
         getResourceStr("/FWBuilderResources/Target/description");
     setWindowTitle(QObject::tr("%1 advanced settings").arg(description.c_str()));
+    bool is_nftables = (platform == "nftables");
+    bool is_iptables = (platform == "iptables");
 
     FWOptions *fwoptions=(Firewall::cast(obj))->getOptionsObject();
     assert(fwoptions!=nullptr);
@@ -162,6 +164,12 @@ iptAdvancedDialog::iptAdvancedDialog(QWidget *parent,FWObject *o)
     data.registerOption(m_dialog->loadModules, fwoptions, "load_modules");
     data.registerOption(m_dialog->iptablesRestoreActivation,
                         fwoptions, "use_iptables_restore");
+    data.registerOption(m_dialog->useNftablesAtomic,
+                        fwoptions, "use_nftables_atomic");
+    data.registerOption(m_dialog->nftables_path,
+                        fwoptions, "nftables_path");
+    data.registerOption(m_dialog->nftables_conf_path,
+                        fwoptions, "nftables_conf_path");
     data.registerOption(m_dialog->ipt_fw_dir, fwoptions, "firewall_dir");
     data.registerOption(m_dialog->ipt_user, fwoptions, "admUser");
     data.registerOption(m_dialog->altAddress, fwoptions, "altAddress");
@@ -203,6 +211,16 @@ iptAdvancedDialog::iptAdvancedDialog(QWidget *parent,FWObject *o)
 
     data.loadAll();
     switchLOG_ULOG();
+
+    m_dialog->label_5->setVisible(is_iptables);
+    m_dialog->iptablesRestoreActivation->setVisible(is_iptables);
+
+    m_dialog->label_nftables_info->setVisible(is_nftables);
+    m_dialog->label_nftables_path->setVisible(is_nftables);
+    m_dialog->label_nftables_conf_path->setVisible(is_nftables);
+    m_dialog->useNftablesAtomic->setVisible(is_nftables);
+    m_dialog->nftables_path->setVisible(is_nftables);
+    m_dialog->nftables_conf_path->setVisible(is_nftables);
 
     if (!Resources::getTargetOptionBool(
             obj->getStr("host_OS"), "user_can_change_install_dir"))
@@ -303,7 +321,5 @@ void iptAdvancedDialog::help()
     h->show();
     h->raise();
 }
-
-
 
 

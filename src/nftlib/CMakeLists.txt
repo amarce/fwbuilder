@@ -3,6 +3,8 @@ set(nftlib_srcs
     CompilerDriver_nft.cpp
     CompilerDriver_nft_nat.cpp
     CompilerDriver_nft_run.cpp
+    OSConfigurator_linux24_nft.cpp
+    OSData_nft.cpp
     PolicyCompiler_nft_optimizer.cpp
     PolicyCompiler_nft.cpp
     PolicyCompiler_PrintRule_nft.cpp

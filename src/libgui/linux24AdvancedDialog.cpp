@@ -62,6 +62,7 @@ linux24AdvancedDialog::linux24AdvancedDialog(QWidget *parent,FWObject *o)
     obj=o;
 
     string host_os = obj->getStr("host_OS");
+    bool is_nftables = (obj->getStr("platform") == "nftables");
     string description = Resources::os_res[host_os]->
         getResourceStr("/FWBuilderResources/Target/description");
     setWindowTitle(QObject::tr("%1 advanced settings").arg(description.c_str()));
@@ -147,6 +148,12 @@ linux24AdvancedDialog::linux24AdvancedDialog(QWidget *parent,FWObject *o)
     data.registerOption( m_dialog->linux24_path_ip6tables,
                          fwopt,
                          "linux24_path_ip6tables" );
+    data.registerOption( m_dialog->nftables_path,
+                         fwopt,
+                         "nftables_path" );
+    data.registerOption( m_dialog->nftables_conf_path,
+                         fwopt,
+                         "nftables_conf_path" );
     data.registerOption( m_dialog->linux24_path_ip,
                          fwopt,
                          "linux24_path_ip");
@@ -191,6 +198,11 @@ linux24AdvancedDialog::linux24AdvancedDialog(QWidget *parent,FWObject *o)
     data.registerOption(m_dialog->linux24_data_dir, fwopt, "data_dir");
 
     data.loadAll();
+
+    m_dialog->label_nftables_path->setVisible(is_nftables);
+    m_dialog->label_nftables_conf_path->setVisible(is_nftables);
+    m_dialog->nftables_path->setVisible(is_nftables);
+    m_dialog->nftables_conf_path->setVisible(is_nftables);
 
     m_dialog->tabWidget->setCurrentIndex(0);
 }
@@ -237,6 +249,5 @@ void linux24AdvancedDialog::help()
     h->raise();
     h->show();
 }
-
 
 
