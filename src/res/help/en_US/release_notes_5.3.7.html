@@ -7,6 +7,7 @@
 <p>
   <ul>
     <li><a href="#iptables">Changes in support for iptables</a></li>
+    <li><a href="#nftables">Changes in support for nftables</a></li>
     <li><a href="#junos">Changes in support for Junos</a></li>
     <li><a href="#gui">GUI changes</a></li>
     <li><a href="#compiler">Compiler and build systems changes</a></li>
@@ -39,6 +40,31 @@
   <li>
     <p>
       Feature: Add support for --kerneltz
+    </p>
+  </li>
+</ul>
+
+<a name="nftables"></a>
+<h2>Changes in support for nftables</h2>
+<ul>
+  <li>
+    <p>
+      Feature: Added the fwb_nft compiler and nftables platform selection in the GUI.
+    </p>
+  </li>
+  <li>
+    <p>
+      Feature: nftables support is aligned with iptables for Policy, NAT, and Routing rules supported by the GUI.
+    </p>
+  </li>
+  <li>
+    <p>
+      Feature: Generated scripts can use the nft binary in atomic mode and respect an optional nftables.conf path.
+    </p>
+  </li>
+  <li>
+    <p>
+      Known limitation: importing existing nftables configurations focuses on basic matches; advanced nftables constructs such as sets or maps may require manual review.
     </p>
   </li>
 </ul>
@@ -102,6 +128,5 @@
     </p>
   </li>
 </ul>
-
 
 

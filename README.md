@@ -5,7 +5,9 @@
 fwbuilder
 =========
 
-Firewall Builder is a GUI firewall management application for iptables, PF, Cisco ASA/PIX/FWSM, Cisco router ACL and more. Firewall configuration data is stored in a central file that can scale to hundreds of firewalls managed from a single UI.
+Firewall Builder is a GUI firewall management application for nftables, iptables, PF, Cisco ASA/PIX/FWSM, Cisco router ACL and more. Firewall configuration data is stored in a central file that can scale to hundreds of firewalls managed from a single UI.
+
+Firewall Builder includes an nftables compiler (fwb_nft). To use it, select the **nftables** platform in the firewall object (New Firewall wizard or the firewall properties dialog). The generated scripts use the `nft` binary and support optional atomic loading and an optional `nftables.conf` path configured in the firewall platform settings.
 
 
 Installation instructions
