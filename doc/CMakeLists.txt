@@ -28,6 +28,7 @@ if(UNIX AND NOT APPLE)
         COMMAND ${GZIP_TOOL} -c ${CMAKE_CURRENT_SOURCE_DIR}/fwb_ipf.1 > ${CMAKE_BINARY_DIR}/fwb_ipf.1.gz
         COMMAND ${GZIP_TOOL} -c ${CMAKE_CURRENT_SOURCE_DIR}/fwb_ipfw.1 > ${CMAKE_BINARY_DIR}/fwb_ipfw.1.gz
         COMMAND ${GZIP_TOOL} -c ${CMAKE_CURRENT_SOURCE_DIR}/fwb_ipt.1 > ${CMAKE_BINARY_DIR}/fwb_ipt.1.gz
+        COMMAND ${GZIP_TOOL} -c ${CMAKE_CURRENT_SOURCE_DIR}/fwb_nft.1 > ${CMAKE_BINARY_DIR}/fwb_nft.1.gz
         COMMAND ${GZIP_TOOL} -c ${CMAKE_CURRENT_SOURCE_DIR}/fwb_pf.1 > ${CMAKE_BINARY_DIR}/fwb_pf.1.gz
         COMMAND ${GZIP_TOOL} -c ${CMAKE_CURRENT_SOURCE_DIR}/fwb_pix.1 > ${CMAKE_BINARY_DIR}/fwb_pix.1.gz)
     
@@ -37,8 +38,8 @@ if(UNIX AND NOT APPLE)
             ${CMAKE_BINARY_DIR}/fwb_ipf.1.gz
             ${CMAKE_BINARY_DIR}/fwb_ipfw.1.gz
             ${CMAKE_BINARY_DIR}/fwb_ipt.1.gz
+            ${CMAKE_BINARY_DIR}/fwb_nft.1.gz
             ${CMAKE_BINARY_DIR}/fwb_pf.1.gz
             ${CMAKE_BINARY_DIR}/fwb_pix.1.gz
             DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
 endif(UNIX AND NOT APPLE)
-

@@ -34,11 +34,11 @@ GUI and policy compilers are completely independent,
 this provides for a consistent abstract model and the 
 same GUI for different firewall platforms.
 
-Firewall Builder supports firewalls based on iptables (Linux kernel
-2.4.x and 2.6.x, see fwb_ipt(1)), ipfilter (variety of platforms
-including *BSD, Solaris and others, see fwb_ipf(1)), pf (OpenBSD and
-FreeBSD, see fwb_pf(1)), ipfw (FreeBSD and others), Cisco PIX (v6.x
-and 7.x) and Cisco IOS extended access lists.
+Firewall Builder supports firewalls based on nftables (see fwb_nft(1)),
+iptables (Linux kernel 2.4.x and 2.6.x, see fwb_ipt(1)), ipfilter
+(variety of platforms including *BSD, Solaris and others, see
+fwb_ipf(1)), pf (OpenBSD and FreeBSD, see fwb_pf(1)), ipfw (FreeBSD and
+others), Cisco PIX (v6.x and 7.x) and Cisco IOS extended access lists.
 
 
 .SH OPTIONS
@@ -89,6 +89,7 @@ Please report bugs using bug tracking system on SourceForge:
 
 .SH SEE ALSO
 .BR fwblookup(1),
+.BR fwb_nft(1),
 .BR fwb_ipt(1),
 .BR fwb_ipf(1),
 .BR fwb_pf(1)

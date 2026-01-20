@@ -16,8 +16,10 @@
   that Firewall Builder can produce the iptables script in two
   formats: 1) as a shell script that calls the iptables utility to add
   each rule one by one, or 2) it can use iptables-restore script to
-  activate the whole policy at once. Other parameters are explained in
-  the online help.
+  activate the whole policy at once. When the platform is nftables,
+  the compiler produces an nft script that can load rules in a single
+  atomic transaction using the <b>nft</b> tool. Other parameters are
+  explained in the online help.
 </p>
 
 <p>
