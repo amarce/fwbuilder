@@ -27,6 +27,7 @@
 #include "Configlet.h"
 #include "CompilerDriver_nft.h"
 #include "PolicyCompiler_nft.h"
+#include "nftables_options.h"
 #include "PolicyCompiler_secuwall.h"
 
 #include "fwbuilder/Address.h"
@@ -167,7 +168,7 @@ string CompilerDriver_nft::dumpScript(Firewall *fw,
         conf->collapseEmptyStrings(true);
     } else
     {
-        if (fw->getOptionsObject()->getBool("use_iptables_restore"))
+        if (useNftablesAtomic(fw->getOptionsObject()))
         {
             conf = new Configlet(fw, "linux24", "script_body_iptables_restore");
         } else
@@ -177,7 +178,7 @@ string CompilerDriver_nft::dumpScript(Firewall *fw,
     conf->setVariable("auto", have_auto);
 
     conf->setVariable("iptables_restore_format",
-                      fw->getOptionsObject()->getBool("use_iptables_restore"));
+                      useNftablesAtomic(fw->getOptionsObject()));
 
     conf->setVariable("filter", !filter_script.empty());
     conf->setVariable("filter_or_auto", have_auto || !filter_script.empty());
@@ -236,4 +237,3 @@ std::unique_ptr<PolicyCompiler_nft> CompilerDriver_nft::createPolicyCompiler(
 
     return policy_compiler;
 }
-

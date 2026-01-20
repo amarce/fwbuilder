@@ -24,6 +24,7 @@
 
 #include "PolicyCompiler_nft.h"
 #include "OSConfigurator_linux24.h"
+#include "nftables_options.h"
 #include "ipt_utils.h"
 
 #include "fwbuilder/AddressRange.h"
@@ -4850,7 +4851,7 @@ string PolicyCompiler_nft::debugPrintRule(Rule *r)
 
 void PolicyCompiler_nft::epilog()
 {
-    if (fwopt->getBool("use_iptables_restore") &&
+    if (useNftablesAtomic(fwopt) &&
         getCompiledScriptLength()>0 &&
         ! inSingleRuleCompileMode())
     {
@@ -4861,7 +4862,7 @@ void PolicyCompiler_nft::epilog()
 PolicyCompiler_nft::PrintRule* PolicyCompiler_nft::createPrintRuleProcessor()
 {
     PolicyCompiler_nft::PrintRule* print_rule = nullptr;
-    if (fw->getOptionsObject()->getBool("use_iptables_restore"))
+    if (useNftablesAtomic(fw->getOptionsObject()))
     {
         // bug #1812295: we should use PrintRuleIptRstEcho not only
         // when we have dynamic interfaces, but also when we have
@@ -4883,7 +4884,7 @@ string PolicyCompiler_nft::flushAndSetDefaultPolicy()
 {
     string res = "";
 
-    if (!inSingleRuleCompileMode() && fwopt->getBool("use_iptables_restore"))
+    if (!inSingleRuleCompileMode() && useNftablesAtomic(fwopt))
     {
         res += "echo :INPUT DROP [0:0]\n";
         res += "echo :FORWARD DROP [0:0]\n";
