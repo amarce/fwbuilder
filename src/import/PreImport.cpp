@@ -91,6 +91,12 @@ void PreImport::scan()
                               << QRegularExpression("^\\[\\d+:\\d+\\] -A OUTPUT ")
                               << QRegularExpression("^\\[\\d+:\\d+\\] -A FORWARD ");
 
+    QList<QRegularExpression> nftables_re;
+    nftables_re << QRegularExpression("^table\\s+\\S+\\s+\\S+\\s*\\{")
+                << QRegularExpression("^chain\\s+\\S+\\s*\\{")
+                << QRegularExpression("\\b(?:iif|oif|iifname|oifname)\\b")
+                << QRegularExpression("\\b(?:dnat|snat|masquerade|accept|drop|reject)\\b");
+
     QList<QRegularExpression> pf_conf_re;
     pf_conf_re << QRegularExpression("^scrub\\s+\\S+")
                << QRegularExpression("^set\\s+timeout\\s+\\S+")
@@ -137,6 +143,15 @@ void PreImport::scan()
                 if (line.indexOf(re) > -1)
                 {
                     platform = IPTABLES;
+                    break;
+                }
+            }
+
+            foreach (QRegularExpression re, nftables_re)
+            {
+                if (line.indexOf(re) > -1)
+                {
+                    platform = NFTABLES;
                     break;
                 }
             }
@@ -291,6 +306,10 @@ QString PreImport::getPlatformAsString()
         platform_string = "iptables";
         break;
 
+    case PreImport::NFTABLES:
+        platform_string = "nftables";
+        break;
+
     case PreImport::PF:
     case PreImport::PF_REVERSE:
         platform_string = "pf";
@@ -299,4 +318,3 @@ QString PreImport::getPlatformAsString()
 
     return platform_string;
 }
-

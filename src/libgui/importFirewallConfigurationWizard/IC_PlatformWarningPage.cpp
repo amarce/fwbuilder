@@ -198,6 +198,20 @@ void IC_PlatformWarningPage::initializePage()
             platformOk = false;
             break;
 
+        case PreImport::NFTABLES:
+            m_dialog->platform->setText(tr("nftables"));
+            m_dialog->platformSpecificWarning->setText(
+                tr("<html><p>Firewall Builder will import nftables tables and "
+                   "chains and translate rules into Policy and NAT rulesets. "
+                   "The importer supports basic address, protocol, interface, "
+                   "and action matching.</p>"
+                   "<p>If your configuration relies on advanced nftables "
+                   "features such as sets or maps, you may need to review and "
+                   "adjust the imported rules.</p></html>"
+                ));
+            platformOk = true;
+            break;
+
         case PreImport::PF:
         {
             m_dialog->platform->setText(tr("pf"));
@@ -272,4 +286,3 @@ void IC_PlatformWarningPage::initializePage()
 
     emit completeChanged();
 }
-

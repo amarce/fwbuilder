@@ -28,6 +28,7 @@
 #include "PreImport.h"
 #include "IOSImporter.h"
 #include "IPTImporter.h"
+#include "NftImporter.h"
 #include "PIXImporter.h"
 
 #include <iostream>
@@ -80,6 +81,10 @@ void importConfig(const string &import_config,
         imp = new IPTImporter(library, instream, logger, fw_name);
         break;
 
+    case PreImport::NFTABLES:
+        imp = new NftImporter(library, instream, logger, fw_name);
+        break;
+
     case PreImport::IPTABLES_WITH_COUNTERS:
         cerr << "This appears to be iptables configuration saved using "
             "command \"iptables-save -c\""
@@ -111,4 +116,3 @@ void importConfig(const string &import_config,
     imp->finalize();
 
 }
-

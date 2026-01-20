@@ -10,6 +10,8 @@ set(import_srcs
     objectSignature.cpp
     Importer.cpp
     IPTImporter.cpp
+    NftImporter.cpp
+    NftImporterRun.cpp
     PFImporter.cpp
     PFImporterRun.cpp
     IOSImporterRun.cpp
@@ -30,4 +32,3 @@ ELSE()
 ENDIF()
 
 target_compile_options(import PRIVATE ${CXX_DEFAULT_FLAGS})
-

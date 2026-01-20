@@ -47,7 +47,7 @@ class PreImport
 public:
 
     enum Platforms { UNKNOWN, IPTABLES, IPTABLES_WITH_COUNTERS,
-                     PF, PF_REVERSE, IOSACL, PIX, FWSM } ;
+                     NFTABLES, PF, PF_REVERSE, IOSACL, PIX, FWSM } ;
 
 private:    
 
