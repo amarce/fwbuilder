@@ -29,6 +29,7 @@
 #include "QThreadLogger.h"
 #include "IOSImporter.h"
 #include "IPTImporter.h"
+#include "NftImporter.h"
 #include "PIXImporter.h"
 #include "PFImporter.h"
 #include "objectMaker.h"
@@ -106,6 +107,9 @@ void ImporterThread::run()
     if (platform == "iptables") importer = new IPTImporter(
         lib, instream, logger, firewallName.toUtf8().constData());
 
+    if (platform == "nftables") importer = new NftImporter(
+        lib, instream, logger, firewallName.toUtf8().constData());
+
     if (platform == "pix" || platform == "fwsm") importer = new PIXImporter(
         lib, instream, logger, firewallName.toUtf8().constData());
 
@@ -155,4 +159,3 @@ void ImporterThread::stop()
 {
     stopFlag = true;
 }
-

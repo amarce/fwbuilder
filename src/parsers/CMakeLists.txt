@@ -3,6 +3,8 @@ set(parsers_srcs
     IOSCfgParser.cpp
     IPTCfgLexer.cpp
     IPTCfgParser.cpp
+    NftCfgLexer.cpp
+    NftCfgParser.cpp
     PFCfgLexer.cpp
     PFCfgParser.cpp
     PIXCfgLexer.cpp
@@ -20,4 +22,3 @@ ELSE()
 ENDIF()
 
 target_compile_options(fwbparser PRIVATE ${CXX_DEFAULT_FLAGS})
-
