@@ -54,6 +54,7 @@
 #include <libxslt/transform.h>
 #include <libxslt/xsltutils.h>
 
+#include <libxml/parser.h>
 #include <libxml/xmlmemory.h>
 
 #include <zlib.h>
@@ -68,14 +69,6 @@
 
 using namespace std;
 using namespace libfwbuilder;
-
-#if !defined(__MINGW32__) || defined(IN_LIBXML)
-extern int xmlDoValidityCheckingDefaultValue ;
-extern int xmlLoadExtDtdDefaultValue         ;
-#else
-extern __declspec(dllimport) int xmlDoValidityCheckingDefaultValue ;
-extern __declspec(dllimport) int xmlLoadExtDtdDefaultValue         ;
-#endif
 
 /*
  * This mutex protects access to XML parser.
@@ -285,8 +278,8 @@ xmlDocPtr XMLTools::parseFile(const string &file_name,
     if (current_template_dir!=nullptr) delete[] current_template_dir;
     current_template_dir = cxx_strdup(template_dir.c_str());
     
-    xmlDoValidityCheckingDefaultValue = use_dtd ? 1 : 0;
-    xmlLoadExtDtdDefaultValue = use_dtd ? DTD_LOAD_BITS : 0;
+    xmlThrDefDoValidityCheckingDefaultValue(use_dtd ? 1 : 0);
+    xmlThrDefLoadExtDtdDefaultValue(use_dtd ? DTD_LOAD_BITS : 0);
     
     string errors;
     xmlSetGenericErrorFunc(&errors, xslt_error_handler);
@@ -446,9 +439,9 @@ void XMLTools::setDTD(xmlDocPtr doc,
     
     LockGuard lock(xml_parser_mutex);
 
-    xmlDoValidityCheckingDefaultValue = 1;
-    xmlLoadExtDtdDefaultValue         = DTD_LOAD_BITS;
-    xmlSubstituteEntitiesDefaultValue = 1;
+    xmlThrDefDoValidityCheckingDefaultValue(1);
+    xmlThrDefLoadExtDtdDefaultValue(DTD_LOAD_BITS);
+    xmlThrDefSubstituteEntitiesDefaultValue(1);
 
     string errors;
     xmlSetGenericErrorFunc (&errors, xslt_error_handler);
@@ -534,7 +527,7 @@ void XMLTools::transformFileToFile(const string &src_file,
     xsltSetGenericDebugFunc (&xslt_errors, xslt_error_handler);
 
     xmlSubstituteEntitiesDefault(1);
-    xmlLoadExtDtdDefaultValue = DTD_LOAD_BITS;
+    xmlThrDefLoadExtDtdDefaultValue(DTD_LOAD_BITS);
     ss = xsltParseStylesheetFile(XMLTools::StrToXmlCast(stylesheet_file));
 
     if(!ss)
@@ -606,12 +599,12 @@ void XMLTools::transformDocumentToFile(xmlDocPtr doc,
     cerr << "Backup copy of XML tree is saved to file .backup_copy.xml" << endl;
 #endif
 
-    xmlDoValidityCheckingDefaultValue = 0;
-    xmlLoadExtDtdDefaultValue = 0;
+    xmlThrDefDoValidityCheckingDefaultValue(0);
+    xmlThrDefLoadExtDtdDefaultValue(0);
     xsltStylesheetPtr ss = xsltParseStylesheetFile(
         XMLTools::StrToXmlCast(stylesheet_file));
-    xmlDoValidityCheckingDefaultValue = 1;
-    xmlLoadExtDtdDefaultValue = DTD_LOAD_BITS;
+    xmlThrDefDoValidityCheckingDefaultValue(1);
+    xmlThrDefLoadExtDtdDefaultValue(DTD_LOAD_BITS);
 
     if (!ss)
     {
@@ -673,12 +666,12 @@ xmlDocPtr XMLTools::transformDocument(xmlDocPtr doc,
     // bugzilla. To be removed than it is fixed.
     xsltSetGenericDebugFunc(&xslt_errors, xslt_error_handler);
 
-    xmlDoValidityCheckingDefaultValue = 0;
-    xmlLoadExtDtdDefaultValue         = 0;
+    xmlThrDefDoValidityCheckingDefaultValue(0);
+    xmlThrDefLoadExtDtdDefaultValue(0);
     xsltStylesheetPtr ss = xsltParseStylesheetFile(
         XMLTools::StrToXmlCast(stylesheet_file));
-    xmlDoValidityCheckingDefaultValue = 1;
-    xmlLoadExtDtdDefaultValue         = DTD_LOAD_BITS;
+    xmlThrDefDoValidityCheckingDefaultValue(1);
+    xmlThrDefLoadExtDtdDefaultValue(DTD_LOAD_BITS);
 
     if (!ss)
     {

@@ -57,6 +57,7 @@ if(WIN32)
 
   if(LIBXML2_IS_STATIC)
     add_compile_definitions(LIBXML_STATIC IN_LIBXML)
+    link_libraries(bcrypt)
   endif()
 
   if(LIBXSLT_IS_STATIC)
