@@ -33,7 +33,13 @@ Note: default destination is /usr/local. This is configurable:
 Windows
 ---------
 Prerequisites (choose either MSYS2/MinGW or MSVC):
-- Toolchain: MSYS2 MinGW-w64 (mingw-w64-x86_64-gcc) **or** Visual Studio 2019/2022 with C++ workload.
+- Toolchain (open source): MSYS2 MinGW-w64 (mingw-w64-x86_64-gcc).
+  - Install MSYS2 from https://www.msys2.org/, then in the MSYS2 terminal run:
+    ```
+     pacman -Syu
+     pacman -S --needed base-devel mingw-w64-x86_64-toolchain mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja
+    ```
+- Alternative toolchain: Visual Studio 2019/2022 with C++ workload (not open source).
 - Qt 5 or Qt 6 (Qt Creator/SDK or standalone packages).
 - CMake 3.16+ and a build tool (Ninja, MinGW Make, or MSBuild).
 - Dependencies: libxml2, libxslt, libsnmp (via MSYS2 packages or prebuilt Windows binaries).
