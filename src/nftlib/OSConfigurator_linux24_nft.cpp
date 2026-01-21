@@ -31,6 +31,7 @@
 #include "fwbuilder/Resources.h"
 
 #include <QStringList>
+#include <map>
 #include <sstream>
 
 using namespace std;
@@ -44,6 +45,8 @@ OSConfigurator_linux24_nft::OSConfigurator_linux24_nft(
     OSConfigurator_linux24(_db, fw, ipv6_policy),
     os_data(fw->getStr("host_OS"))
 {
+    FWOptions *options = fw->getOptionsObject();
+    using_ipset = options->getBool("use_nft_sets");
 }
 
 string OSConfigurator_linux24_nft::getPathForATool(
@@ -126,7 +129,7 @@ string OSConfigurator_linux24_nft::printShellFunctions(bool have_ipv6)
                               options->getBool("configure_bonding_interfaces"));
     }
 
-    configlet.setVariable("need_ipset", usingIpSetModule());
+    configlet.setVariable("need_ipset", false);
 
     output.push_back(configlet.expand());
 
@@ -155,4 +158,31 @@ string OSConfigurator_linux24_nft::printShellFunctions(bool have_ipv6)
     }
 
     return output.join("\n").toStdString();
+}
+
+string OSConfigurator_linux24_nft::printRunTimeAddressTablesCode()
+{
+    Configlet conf(fw, "nftables", "run_time_address_tables");
+    conf.setVariable("using_ipset", using_ipset);
+
+    ostringstream check_ostr;
+    ostringstream load_ostr;
+    map<string,string>::iterator i;
+    for (i=address_table_objects.begin(); i!=address_table_objects.end(); ++i)
+    {
+        string at_name = i->first;
+        string at_file = i->second;
+        if (!at_file.empty())
+        {
+            check_ostr << "check_file \"" + at_name +
+                "\" \"" + at_file + "\"" << endl;
+            load_ostr << "reload_address_table \"" + at_name +
+                "\" \"" + at_file + "\"" << endl;
+        }
+    }
+
+    conf.setVariable("check_files_commands", check_ostr.str().c_str());
+    conf.setVariable("load_files_commands", load_ostr.str().c_str());
+
+    return conf.expand().toStdString();
 }

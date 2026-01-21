@@ -45,6 +45,7 @@ namespace fwcompiler {
 
         virtual std::string printShellFunctions(bool have_ipv6);
         virtual std::string printPathForAllTools(const std::string &os);
+        virtual std::string printRunTimeAddressTablesCode();
     };
 };
 

@@ -138,6 +138,7 @@ iptAdvancedDialog::iptAdvancedDialog(QWidget *parent,FWObject *o)
                          fwoptions,"action_on_reject", slm);
 
     data.registerOption(m_dialog->useModuleSet, fwoptions, "use_m_set");
+    data.registerOption(m_dialog->useNftSets, fwoptions, "use_nft_sets");
     data.registerOption(m_dialog->useKernelTz, fwoptions, "use_kerneltz");
 
 
@@ -221,6 +222,8 @@ iptAdvancedDialog::iptAdvancedDialog(QWidget *parent,FWObject *o)
     m_dialog->useNftablesAtomic->setVisible(is_nftables);
     m_dialog->nftables_path->setVisible(is_nftables);
     m_dialog->nftables_conf_path->setVisible(is_nftables);
+    m_dialog->useNftSets->setVisible(is_nftables);
+    m_dialog->useModuleSet->setVisible(is_iptables);
 
     if (!Resources::getTargetOptionBool(
             obj->getStr("host_OS"), "user_can_change_install_dir"))
@@ -230,10 +233,13 @@ iptAdvancedDialog::iptAdvancedDialog(QWidget *parent,FWObject *o)
     }
 
     string version = obj->getStr("version");
-    bool can_use_module_set = (XMLTools::version_compare(version, "1.4.1.1") >= 0);
-    if (!can_use_module_set)
-        m_dialog->useModuleSet->setChecked(false);
-    m_dialog->useModuleSet->setEnabled(can_use_module_set);
+    if (is_iptables)
+    {
+        bool can_use_module_set = (XMLTools::version_compare(version, "1.4.1.1") >= 0);
+        if (!can_use_module_set)
+            m_dialog->useModuleSet->setChecked(false);
+        m_dialog->useModuleSet->setEnabled(can_use_module_set);
+    }
 
     bool can_use_kerneltz = (XMLTools::version_compare(version, "1.4.11") >= 0);
     if (!can_use_kerneltz)
@@ -321,5 +327,3 @@ void iptAdvancedDialog::help()
     h->show();
     h->raise();
 }
-
-
