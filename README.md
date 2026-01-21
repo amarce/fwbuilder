@@ -37,7 +37,9 @@ Prerequisites (choose either MSYS2/MinGW or MSVC):
   - Install MSYS2 from https://www.msys2.org/, then in the MSYS2 terminal run:
     ```
      pacman -Syu
-     pacman -S --needed base-devel mingw-w64-x86_64-toolchain mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja
+     pacman -S --needed base-devel mingw-w64-x86_64-toolchain mingw-w64-x86_64-cmake \
+       mingw-w64-x86_64-ninja mingw-w64-x86_64-qt6 mingw-w64-x86_64-libxml2 \
+       mingw-w64-x86_64-libxslt mingw-w64-x86_64-net-snmp
     ```
 - Alternative toolchain: Visual Studio 2019/2022 with C++ workload (not open source).
 - Qt 5 or Qt 6 (Qt Creator/SDK or standalone packages).
@@ -56,18 +58,18 @@ Build directory setup:
  cd build
 ```
 
-CMake configuration examples:
+CMake configuration examples (use `\` line continuations in the MSYS2 bash shell; `^` is for cmd.exe):
 - MSYS2/MinGW (64-bit):
 ```
- cmake .. -G "MinGW Makefiles" ^
-   -DCMAKE_BUILD_TYPE=Release ^
-   -DCMAKE_PREFIX_PATH=C:/Qt/6.6.1/mingw_64 ^
-   -DLIBXML2_LIBRARY=C:/msys64/mingw64/lib/libxml2.dll.a ^
-   -DLIBXML2_INCLUDE_DIR=C:/msys64/mingw64/include/libxml2 ^
-   -DLIBXSLT_LIBRARY=C:/msys64/mingw64/lib/libxslt.dll.a ^
-   -DLIBXSLT_INCLUDE_DIR=C:/msys64/mingw64/include ^
-   -DNETSNMP_LIBRARY=C:/msys64/mingw64/lib/libnetsnmp.dll.a ^
-   -DNETSNMP_INCLUDE_DIR=C:/msys64/mingw64/include
+ cmake .. -G "MinGW Makefiles" \
+   -DCMAKE_BUILD_TYPE=Release \
+   -DCMAKE_PREFIX_PATH=/mingw64 \
+   -DLIBXML2_LIBRARY=/mingw64/lib/libxml2.dll.a \
+   -DLIBXML2_INCLUDE_DIR=/mingw64/include/libxml2 \
+   -DLIBXSLT_LIBRARY=/mingw64/lib/libxslt.dll.a \
+   -DLIBXSLT_INCLUDE_DIR=/mingw64/include \
+   -DNETSNMP_LIBRARY=/mingw64/lib/libnetsnmp.dll.a \
+   -DNETSNMP_INCLUDE_DIR=/mingw64/include
 ```
 - MSVC (Visual Studio 2022 x64):
 ```
