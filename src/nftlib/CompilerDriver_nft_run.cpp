@@ -140,6 +140,11 @@ QString CompilerDriver_nft::run(const std::string &cluster_id,
         string host_os = fw->getStr("host_OS");
 
         FWOptions* options = fw->getOptionsObject();
+        if (options->getBool("use_iptables_restore") &&
+            !options->getBool("use_nftables_atomic"))
+        {
+            options->setBool("use_nftables_atomic", true);
+        }
         string s;
 
         // Note that fwobjectname may be different from the name of the

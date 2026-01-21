@@ -29,7 +29,8 @@ namespace fwcompiler {
 inline bool useNftablesAtomic(const libfwbuilder::FWOptions *options)
 {
     if (options == nullptr) return false;
-    return options->getBool("use_nftables_atomic");
+    return options->getBool("use_nftables_atomic") ||
+        options->getBool("use_iptables_restore");
 }
 
 }
