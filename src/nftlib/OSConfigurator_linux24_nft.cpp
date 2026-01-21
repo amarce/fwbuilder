@@ -27,6 +27,7 @@
 
 #include "Configlet.h"
 
+#include "fwbuilder/Firewall.h"
 #include "fwbuilder/FWOptions.h"
 #include "fwbuilder/Resources.h"
 
@@ -46,7 +47,7 @@ OSConfigurator_linux24_nft::OSConfigurator_linux24_nft(
     os_data(fw->getStr("host_OS"))
 {
     FWOptions *options = fw->getOptionsObject();
-    using_ipset = options->getBool("use_nft_sets");
+    setUsingIpSet(options->getBool("use_nft_sets"));
 }
 
 string OSConfigurator_linux24_nft::getPathForATool(
@@ -163,12 +164,13 @@ string OSConfigurator_linux24_nft::printShellFunctions(bool have_ipv6)
 string OSConfigurator_linux24_nft::printRunTimeAddressTablesCode()
 {
     Configlet conf(fw, "nftables", "run_time_address_tables");
-    conf.setVariable("using_ipset", using_ipset);
+    conf.setVariable("using_ipset", usesIpSet());
 
     ostringstream check_ostr;
     ostringstream load_ostr;
-    map<string,string>::iterator i;
-    for (i=address_table_objects.begin(); i!=address_table_objects.end(); ++i)
+    const map<string, string> &address_tables = getAddressTableObjects();
+    map<string, string>::const_iterator i;
+    for (i=address_tables.begin(); i!=address_tables.end(); ++i)
     {
         string at_name = i->first;
         string at_file = i->second;

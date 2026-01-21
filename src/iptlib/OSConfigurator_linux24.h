@@ -75,6 +75,11 @@ namespace fwcompiler {
             QStringList &update_addresses,
             QStringList &ignore_addresses);
 
+protected:
+        bool usesIpSet() const;
+        void setUsingIpSet(bool enabled);
+        const std::map<std::string,std::string>& getAddressTableObjects() const;
+
 public:
 
 	virtual ~OSConfigurator_linux24();
