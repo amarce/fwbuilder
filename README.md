@@ -64,6 +64,7 @@ CMake configuration examples (use `\` line continuations in the MSYS2 bash shell
  cmake .. -G "MinGW Makefiles" \
    -DCMAKE_BUILD_TYPE=Release \
    -DCMAKE_PREFIX_PATH=/mingw64 \
+   -DUseQt6=ON \
    -DLIBXML2_LIBRARY=/mingw64/lib/libxml2.dll.a \
    -DLIBXML2_INCLUDE_DIR=/mingw64/include/libxml2 \
    -DLIBXSLT_LIBRARY=/mingw64/lib/libxslt.dll.a \
