@@ -22,6 +22,7 @@
 */
 
 #include "NftImporter.h"
+#include "fwbuilder/RuleElement.h"
 
 #include "fwbuilder/Address.h"
 #include "fwbuilder/AddressRange.h"
@@ -549,6 +550,7 @@ void NftImporter::pushPolicyRule()
 {
     PolicyRule *rule = PolicyRule::cast(current_rule);
     FWOptions  *ropt = current_rule->getOptionsObject();
+    (void)ropt;
     assert(ropt != nullptr);
 
     PolicyRule::Action action = PolicyRule::Unknown;
