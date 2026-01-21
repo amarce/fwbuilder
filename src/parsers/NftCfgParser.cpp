@@ -125,12 +125,24 @@ void NftCfgParser::parseChain()
 
 void NftCfgParser::parseRuleTokens(vector<string> &rule_tokens)
 {
-    while (hasTokens() && peek() != ";" && peek() != "}")
+    int depth = 0;
+    while (hasTokens())
     {
-        rule_tokens.push_back(consume());
-    }
+        if (peek() == ";" && depth == 0)
+        {
+            consume();
+            break;
+        }
+        if (peek() == "}" && depth == 0)
+        {
+            break;
+        }
 
-    if (hasTokens() && peek() == ";") consume();
+        string tok = consume();
+        if (tok == "{") depth++;
+        else if (tok == "}" && depth > 0) depth--;
+        rule_tokens.push_back(tok);
+    }
 
     if (rule_tokens.empty()) return;
 
