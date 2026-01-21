@@ -102,6 +102,7 @@ instOptionsDialog::instOptionsDialog(QWidget *parent, instConf *_cnf, bool insta
     m_dialog->stripComments->setChecked( cnf->stripComments );
     m_dialog->compressScript->setChecked( cnf->compressScript );
     m_dialog->copyFWB->setChecked( cnf->copyFWB );
+    m_dialog->installSystemdUnit->setChecked( cnf->installSystemdUnit );
 
     // If we have user name, bring focus to the password input field
     // if we do not have user name, focus goes to the user name field
@@ -121,6 +122,7 @@ instOptionsDialog::instOptionsDialog(QWidget *parent, instConf *_cnf, bool insta
     );
 
     QString platform = cnf->fwobj->getStr("platform").c_str();
+    QString host_os = cnf->fwobj->getStr("host_OS").c_str();
     string version = cnf->fwobj->getStr("version");
 
     if (platform=="pix" || platform=="fwsm" ||
@@ -149,6 +151,12 @@ instOptionsDialog::instOptionsDialog(QWidget *parent, instConf *_cnf, bool insta
     m_dialog->stripComments->hide();
 
     m_dialog->compressScript->hide();
+
+    if (!host_os.startsWith("linux"))
+    {
+        m_dialog->installSystemdUnit->setChecked(false);
+        m_dialog->installSystemdUnit->hide();
+    }
 
     m_dialog->PIXgroupBox->adjustSize();
     //m_dialog->generalOptionsBox->adjustSize();
@@ -227,4 +235,3 @@ void instOptionsDialog::batchInstallStateChange()
         m_dialog->altAddress->setEnabled(true);
     }
 }
-

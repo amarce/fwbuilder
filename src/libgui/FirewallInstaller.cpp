@@ -740,6 +740,8 @@ QString FirewallInstaller::getActivationCmd()
 
     configlet.setVariable("with_compression",  cnf->compressScript);
     configlet.setVariable("no_compression",  ! cnf->compressScript);
+    configlet.setVariable("install_systemd_unit", cnf->installSystemdUnit);
+    configlet.setVariable("no_install_systemd_unit", ! cnf->installSystemdUnit);
 
     // On FreeBSD where we can generate either shell script or rc.conf
     // file, installation commands differ.
@@ -867,4 +869,3 @@ void FirewallInstaller::terminate()
         session->terminate();
     }
 }
-

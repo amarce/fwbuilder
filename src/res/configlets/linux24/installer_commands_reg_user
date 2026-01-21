@@ -22,5 +22,4 @@
 ##  on the input of sudo and other commands. This creates difficult to catch
 ##  race condition which breaks installation process.
 
-echo '{{$fwbprompt}}'; chmod +x {{$fwdir}}/{{$fwscript}}; sudo -S {{$fwdir}}/{{$fwscript}} && echo 'Policy activated'
-
+{{if install_systemd_unit}}echo '{{$fwbprompt}}'; chmod +x {{$fwdir}}/{{$fwscript}}; sudo -S sh -c "printf '[Unit]\nDescription=Firewall Builder policy for {{$firewall_name}}\nAfter=network.target\n\n[Service]\nType=oneshot\nExecStart={{$fwdir}}/{{$fwscript}}\nRemainAfterExit=yes\n\n[Install]\nWantedBy=multi-user.target\n' > /etc/systemd/system/fwbuilder-{{$firewall_name}}.service"; sudo -S systemctl daemon-reload; sudo -S systemctl enable --now fwbuilder-{{$firewall_name}}.service && echo 'Policy activated'{{endif}}{{if no_install_systemd_unit}}echo '{{$fwbprompt}}'; chmod +x {{$fwdir}}/{{$fwscript}}; sudo -S {{$fwdir}}/{{$fwscript}} && echo 'Policy activated'{{endif}}

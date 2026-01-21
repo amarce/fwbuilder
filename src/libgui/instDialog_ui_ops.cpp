@@ -510,6 +510,8 @@ void instDialog::storeInstallerOptions()
     st->setValue(SETTINGS_PATH_PREFIX"/Installer/stripComments", cnf.stripComments);
     st->setValue(SETTINGS_PATH_PREFIX"/Installer/compressScript", cnf.compressScript);
     st->setValue(SETTINGS_PATH_PREFIX"/Installer/copyFWB",  cnf.copyFWB);
+    st->setValue(SETTINGS_PATH_PREFIX"/Installer/installSystemdUnit",
+                 cnf.installSystemdUnit);
 }
 
 void instDialog::summary()
@@ -1151,6 +1153,8 @@ void instDialog::readInstallerOptionsFromSettings()
     cnf.stripComments  = st->value(SETTINGS_PATH_PREFIX"/Installer/stripComments").toBool();
     cnf.compressScript = st->value(SETTINGS_PATH_PREFIX"/Installer/compressScript").toBool();
     cnf.copyFWB = st->value(SETTINGS_PATH_PREFIX"/Installer/copyFWB").toBool();
+    cnf.installSystemdUnit =
+        st->value(SETTINGS_PATH_PREFIX"/Installer/installSystemdUnit").toBool();
 }
 
 void instDialog::readInstallerOptionsFromFirewallObject(Firewall *fw)
@@ -1357,6 +1361,7 @@ void instDialog::readInstallerOptionsFromDialog(Firewall *fw,
     cnf.stripComments = dlg->m_dialog->stripComments->isChecked();
     cnf.compressScript= dlg->m_dialog->compressScript->isChecked();
     cnf.copyFWB       = dlg->m_dialog->copyFWB->isChecked();
+    cnf.installSystemdUnit = dlg->m_dialog->installSystemdUnit->isChecked();
 
     dlg->savePassword();
     storeInstallerOptions();
