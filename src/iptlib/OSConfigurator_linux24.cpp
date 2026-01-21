@@ -87,6 +87,21 @@ OSConfigurator_linux24::~OSConfigurator_linux24()
     delete command_wrappers;
 }
 
+bool OSConfigurator_linux24::usesIpSet() const
+{
+    return using_ipset;
+}
+
+void OSConfigurator_linux24::setUsingIpSet(bool enabled)
+{
+    using_ipset = enabled;
+}
+
+const map<string, string>& OSConfigurator_linux24::getAddressTableObjects() const
+{
+    return address_table_objects;
+}
+
 /*
  * this function generates acceptable shell variable name from
  * interface name. Note that PolicyCompiler_ipt::getInterfaceVarName()
