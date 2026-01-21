@@ -677,13 +677,10 @@ QString CompilerDriver_nft::run(const std::string &cluster_id,
 
         script_buffer = "";
 
-        Configlet block_action(fw, "linux24", "block_action");
-        if (XMLTools::version_compare(fw_version, "1.4.20") >= 0)
-            block_action.setVariable("opt_wait", "-w");
-        else
-            block_action.setVariable("opt_wait", "");
-
+        Configlet block_action(fw, "nftables", "block_action");
         block_action.collapseEmptyStrings(true);
+        block_action.setVariable("have_ipv4", have_ipv4);
+        block_action.setVariable("have_ipv6", have_ipv6);
 
         // the name of the option is historical (including the typo)
         if (fw->getOptionsObject()->getBool("add_mgmt_ssh_rule_when_stoped"))
@@ -702,21 +699,16 @@ QString CompilerDriver_nft::run(const std::string &cluster_id,
         script_skeleton.setVariable("block_action", block_action.expand());
 
 
-        Configlet stop_action(fw, "linux24", "stop_action");
+        Configlet stop_action(fw, "nftables", "stop_action");
         stop_action.collapseEmptyStrings(true);
         stop_action.setVariable("have_ipv4", have_ipv4);
         stop_action.setVariable("have_ipv6", have_ipv6);
-
-        if (XMLTools::version_compare(fw_version, "1.4.20") >= 0)
-            stop_action.setVariable("opt_wait", "-w");
-        else
-            stop_action.setVariable("opt_wait", "");
 
         script_skeleton.setVariable("stop_action", stop_action.expand());
 
 
 
-        Configlet status_action(fw, "linux24", "status_action");
+        Configlet status_action(fw, "nftables", "status_action");
         status_action.collapseEmptyStrings(true);
         script_skeleton.setVariable("status_action", status_action.expand());
 
