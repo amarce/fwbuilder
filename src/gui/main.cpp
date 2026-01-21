@@ -40,6 +40,8 @@
 #include <QTranslator>
 #include <QLibraryInfo>
 #include <QtDebug>
+#include <QMessageBox>
+#include <QCoreApplication>
 
 #include "FWBApplication.h"
 #include "FWBSettings.h"
@@ -200,7 +202,23 @@ int main( int argc, char *argv[] )
 
 //    INIT2;
 
+    auto shutdownWithError = [&](const QString &message) {
+        qCritical() << message;
+        QMessageBox::critical(nullptr,
+                              QObject::tr("Firewall Builder"),
+                              message);
+        if (st != nullptr)
+        {
+            st->save();
+            delete st;
+            st = nullptr;
+        }
+        XMLTools::close();
+        return 1;
+    };
+
     string full_res_path = Constants::getResourcesFilePath();
+    qDebug() << "Computed resources path:" << QString::fromStdString(full_res_path);
 
     if (fwbdebug)
     {
@@ -210,8 +228,31 @@ int main( int argc, char *argv[] )
     QFileInfo fi(full_res_path.c_str());
     if (!fi.exists())
     {
-        qDebug() << QString("Resource file %1 does not exist").arg(fi.filePath());
-        exit(1);
+        const QString app_dir = QCoreApplication::applicationDirPath();
+        const QStringList fallback_paths = {
+            app_dir + "/resources.xml",
+            app_dir + "/../share/fwbuilder/resources.xml"
+        };
+        bool fallback_found = false;
+        for (const QString &path : fallback_paths)
+        {
+            qDebug() << "Checking fallback resources path:" << path;
+            if (QFileInfo::exists(path))
+            {
+                full_res_path = path.toStdString();
+                fallback_found = true;
+                break;
+            }
+        }
+        if (!fallback_found)
+        {
+            return shutdownWithError(QObject::tr(
+                "Unable to find the resources file.\n\n"
+                "Expected location: %1\n"
+                "Fix: reinstall Firewall Builder or point the application to a valid "
+                "resources.xml file.").arg(fi.filePath()));
+        }
+        fi.setFile(QString::fromStdString(full_res_path));
     }
 
     Resources res(full_res_path);
@@ -222,8 +263,12 @@ int main( int argc, char *argv[] )
     if (platforms.empty() || (
             platforms.size()==1 && platforms.front()=="unknown" ))
     {
-        qDebug("Failed to load list of supported platforms");
-        exit(1);
+        res.clear();
+        return shutdownWithError(QObject::tr(
+            "Failed to load the list of supported platforms from resources.\n\n"
+            "Resources file: %1\n"
+            "Fix: verify the resources.xml file is present and readable, then "
+            "restart Firewall Builder.").arg(QString::fromStdString(full_res_path)));
     }
 
     if (cli_print)
@@ -303,5 +348,4 @@ int main( int argc, char *argv[] )
 
     return 0;
 }
-
 
