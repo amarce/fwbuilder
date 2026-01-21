@@ -48,6 +48,7 @@ class instConf {
     bool      stripComments;
     bool      compressScript;
     bool      copyFWB;
+    bool      installSystemdUnit;
     bool      saveStandby;
     bool      batchInstall;
     bool      useSCPForRouter; // use scp for cisco ios, pix and hp procurve

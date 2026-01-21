@@ -22,6 +22,24 @@
 {{if run}}
 echo '{{$fwbprompt}}';
 chmod +x {{$fwdir}}/{{$fwscript}};
+{{if install_systemd_unit}}
+cat > /etc/systemd/system/fwbuilder-{{$firewall_name}}.service <<'EOF'
+[Unit]
+Description=Firewall Builder policy for {{$firewall_name}}
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart={{$fwdir}}/{{$fwscript}}
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload;
+systemctl enable --now fwbuilder-{{$firewall_name}}.service && echo 'Policy activated'
+{{endif}}
+{{if no_install_systemd_unit}}
 sh {{$fwdir}}/{{$fwscript}} && echo 'Policy activated'
 {{endif}}
-
+{{endif}}

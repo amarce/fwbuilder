@@ -350,6 +350,13 @@ the firewall in the &quot;advanced&quot; settings dialog of the firewall object.
        </widget>
       </item>
       <item row="11" column="0" colspan="2">
+       <widget class="QCheckBox" name="installSystemdUnit">
+        <property name="text">
+         <string>Install and enable systemd unit (start on boot)</string>
+        </property>
+       </widget>
+      </item>
+      <item row="12" column="0" colspan="2">
        <spacer name="verticalSpacer">
         <property name="orientation">
          <enum>Qt::Vertical</enum>
@@ -379,6 +386,7 @@ the firewall in the &quot;advanced&quot; settings dialog of the firewall object.
      <zorder>backupConfigFile</zorder>
      <zorder>saveDiff</zorder>
      <zorder>saveStandby</zorder>
+     <zorder>installSystemdUnit</zorder>
     </widget>
    </item>
    <item row="2" column="0">
@@ -449,6 +457,7 @@ the firewall in the &quot;advanced&quot; settings dialog of the firewall object.
   <tabstop>backupConfigFile</tabstop>
   <tabstop>saveDiff</tabstop>
   <tabstop>saveStandby</tabstop>
+  <tabstop>installSystemdUnit</tabstop>
   <tabstop>altAddress</tabstop>
   <tabstop>okButton</tabstop>
   <tabstop>cancelButton</tabstop>

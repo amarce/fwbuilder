@@ -83,9 +83,9 @@ void instConf::clear()
     maddr = "";
     user = "";
     batchInstall = false;
+    installSystemdUnit = false;
     sshArgs = "";
     scpArgs = "";
     putty_session = "";
     fwscript = "";
 }
-
