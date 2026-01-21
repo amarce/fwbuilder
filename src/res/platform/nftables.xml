@@ -29,6 +29,7 @@
           <verify_interfaces>true</verify_interfaces>
           <local_nat>false</local_nat>
           <use_nftables_atomic>true</use_nftables_atomic>
+          <use_nft_sets>true</use_nft_sets>
           <nftables_path>/usr/sbin/nft</nftables_path>
           <nftables_conf_path>/etc/nftables.conf</nftables_conf_path>
         </default>

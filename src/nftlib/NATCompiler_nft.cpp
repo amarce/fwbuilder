@@ -220,9 +220,7 @@ int NATCompiler_nft::prolog()
         build_interface_groups(dbcopy, persistent_objects, fw, ipv6, regular_interfaces);
     }
 
-    string version = fw->getStr("version");
-    using_ipset = (XMLTools::version_compare(version, "1.4.1.1") >= 0 &&
-                          fwopt->getBool("use_m_set"));
+    using_ipset = fwopt->getBool("use_nft_sets");
 
     return n;
 }
