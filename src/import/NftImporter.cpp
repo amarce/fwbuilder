@@ -658,6 +658,11 @@ void NftImporter::pushNATRule()
         rule_type = NATRule::NONAT;
     }
 
+    if (target == "RETURN")
+    {
+        rule_type = NATRule::Return;
+    }
+
     if (target == "MASQUERADE")
     {
         rule_type = NATRule::Masq;
