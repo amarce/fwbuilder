@@ -37,6 +37,7 @@
 #include "CompilerDriver_pix.h"
 #include "CompilerDriver_procurve_acl.h"
 #include "CompilerDriver_nxosacl.h"
+#include "CompilerDriver_nft.h"
 #include "../juniper_lib/CompilerDriver_junosacl.h"
 
 #include <string>
@@ -54,6 +55,7 @@ CompilerDriver* CompilerDriverFactory::createCompilerDriver(Firewall *fw)
     if (platform == "ipf") return new CompilerDriver_ipf(fw->getRoot());
     if (platform == "ipfw") return new CompilerDriver_ipfw(fw->getRoot());
     if (platform == "iosacl") return new CompilerDriver_iosacl(fw->getRoot());
+    if (platform == "nftables") return new CompilerDriver_nft(fw->getRoot());
     if (platform == "nxosacl") return new CompilerDriver_nxosacl(fw->getRoot());
     if (platform == "junosacl") return new CompilerDriver_junosacl(fw->getRoot());
     if (platform == "pix" || platform == "fwsm")
@@ -62,4 +64,3 @@ CompilerDriver* CompilerDriverFactory::createCompilerDriver(Firewall *fw)
         return new CompilerDriver_procurve_acl(fw->getRoot());
     return nullptr;
 }
-

@@ -586,10 +586,9 @@ target_include_directories(gui PRIVATE
     $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}>/src/libgui)
 
 IF (UseQt6)
-    target_link_libraries(gui fwbcisco fwbjuniper iptlib fwbpf import Qt6::Core Qt6::Widgets Qt6::Network Qt6::PrintSupport)
+    target_link_libraries(gui fwbcisco fwbjuniper iptlib nftlib fwbpf import Qt6::Core Qt6::Widgets Qt6::Network Qt6::PrintSupport)
 ELSE()
-    target_link_libraries(gui fwbcisco fwbjuniper iptlib fwbpf import Qt5::Core Qt5::Widgets Qt5::Network Qt5::PrintSupport)
+    target_link_libraries(gui fwbcisco fwbjuniper iptlib nftlib fwbpf import Qt5::Core Qt5::Widgets Qt5::Network Qt5::PrintSupport)
 ENDIF()
 
 target_compile_options(gui PRIVATE ${CXX_DEFAULT_FLAGS})
-
