@@ -53,7 +53,6 @@
 #include "fwbuilder/TagService.h"
 #include "fwbuilder/UDPService.h"
 #include "fwbuilder/UserService.h"
-#include "fwbuilder/XMLTools.h"
 #include "fwbuilder/physAddress.h"
 
 #include "combinedAddress.h"
@@ -794,7 +793,7 @@ bool PolicyCompiler_nft::dropMangleTableRules::processNext()
     // Another special case (while working on #1415, although not
     // related directly): branching rule that has "branch in mangle table"
     // checkbox turned on and is branches to the "mangle only" rule set
-    // does not need any iptables rules in the filter table
+    // does not need any nftables rules in the filter table
     FWOptions *ruleopt = rule->getOptionsObject();
     if (rule->getAction() == PolicyRule::Branch &&
         ruleopt->getBool("ipt_branch_in_mangle"))
@@ -865,9 +864,9 @@ bool PolicyCompiler_nft::deprecateOptionRoute::processNext()
     if (rule->getRouting())
     {
 	compiler->abort(
-            rule, 
+            rule,
             "Option Route is deprecated. You can use Custom Action "
-            "to generate iptables command using '-j ROUTE' target "
+            "to generate nftables routing rules "
             "if it is supported by your firewall OS");
         return true;
     }
@@ -925,7 +924,7 @@ bool PolicyCompiler_nft::Logging2::processNext()
     if (rule->getLogging()) 
     {
 /*
- * see #2235 Rules with action Continue translate into iptables
+ * see #2235 Rules with action Continue translate into nftables
  * commands without "-j TARGET" parameter, so we dont need to create new chain
  * for logging.
  */
@@ -2228,7 +2227,7 @@ bool PolicyCompiler_nft::splitIfSrcAny::processNext()
         tmp_queue.push_back(r);
 
         /*
-         * A note about CLASSIFY target in iptables:
+         * A note about CLASSIFY target in nftables:
          *
          * CLASSIFY only works in mangle table in POSTROUTING chain.
          * the man page does not mention this, but module
@@ -3549,7 +3548,7 @@ bool PolicyCompiler_nft::decideOnTarget::processNext()
  *  we do not add any virtual addresses for NAT.
  *
  * After removal the rule collapses to a simple command like this:
- *   iptables -A INPUT -p tcp --dport 22 -m state --state NEW -j ACCEPT
+ *   nft add rule ip filter input tcp dport 22 ct state new accept
  *
  * this works fine except if we have added virtual addresses for
  * NAT. It is assumed that firewall object in rules represents
@@ -4103,7 +4102,7 @@ bool PolicyCompiler_nft::processMultiAddressObjectsInRE::processNext()
 }
 
 /*
- * iptables does not have target that would do nothing and would not
+ * nftables does not have a no-op target that would do nothing and would not
  * terminate processing of the packet (like NOP), so we create a new
  * user chain with target RETURN.
  */
@@ -4289,7 +4288,6 @@ void PolicyCompiler_nft::addRuleFilter()
  */
 void PolicyCompiler_nft::compile()
 {
-    string version = fw->getStr("version");
     string banner = " Compiling ruleset " + getRuleSetName() +
         " for '" + my_table + "' table";
     if (ipv6) banner += ", IPv6";
@@ -4522,24 +4520,14 @@ void PolicyCompiler_nft::compile()
     add( new processMultiAddressObjectsInDst(
              "process MultiAddress objects in Dst"));
 
-    if (XMLTools::version_compare(version, "1.2.11") < 0)
-    {
-        /* Use module iprange for iptables v1.2.11 and later.
-         * should expand address range before splitIfSrcMatchesFw because some
-         * addresses in the range may match firewall
-         */
-        add( new addressRanges("process address ranges"));
-    } else
-    {
-        add( new specialCaseAddressRangeInSrc(
-                 "replace single address range in Src"));
-        add( new specialCaseAddressRangeInDst(
-                 "replace single address range in Dst"));
-        add( new splitIfSrcMatchingAddressRange(
-                 "split rule if Src contains matching address range object"));
-        add( new splitIfDstMatchingAddressRange(
-                 "split rule if Dst contains matching address range object"));
-    }
+    add( new specialCaseAddressRangeInSrc(
+             "replace single address range in Src"));
+    add( new specialCaseAddressRangeInDst(
+             "replace single address range in Dst"));
+    add( new splitIfSrcMatchingAddressRange(
+             "split rule if Src contains matching address range object"));
+    add( new splitIfDstMatchingAddressRange(
+             "split rule if Dst contains matching address range object"));
 
     add( new dropRuleWithEmptyRE("drop rules with empty rule elements"));
 
@@ -4668,7 +4656,7 @@ void PolicyCompiler_nft::compile()
     add( new ConvertToAtomicForIntervals(
              "convert to atomic rules by interval element") );
 
-    // see #2235. ACtion Continue should generate iptables command
+    // see #2235. Action Continue should generate nftables command
     // w/o "-j TARGET" parameter
     //
     // add( new SkipActionContinueWithNoLogging(
@@ -4879,13 +4867,7 @@ std::string PolicyCompiler_nft::printAutomaticRules()
     if (!inSingleRuleCompileMode())
     {
         PolicyCompiler_nft::PrintRule* print_rule = createPrintRuleProcessor();
-        // iptables accepted TCPMSS target in filter table, FORWARD chain 
-        // in the older versions, but requires it to be in mangle filter
-        // starting somewhere 1.3.x
-        string version = fw->getStr("version");
-        if (XMLTools::version_compare(version, "1.3.0")<0)
-            res += print_rule->_clampTcpToMssRule();
-
+        res += print_rule->_clampTcpToMssRule();
         res += print_rule->_printOptionalGlobalRules();
         delete print_rule;
     }
@@ -4895,12 +4877,6 @@ std::string PolicyCompiler_nft::printAutomaticRules()
 string PolicyCompiler_nft::commit()
 {
     return createPrintRuleProcessor()->_commit();
-}
-
-bool PolicyCompiler_nft::newIptables(const string &version)
-{
-    return (version.empty() || version=="ge_1.2.6" ||
-            XMLTools::version_compare(version, "1.2.6")>0);
 }
 
 list<string> PolicyCompiler_nft::getUsedChains()
@@ -4922,7 +4898,7 @@ list<string> PolicyCompiler_nft::getUsedChains()
  * OR
  * rule with greater rate shadows rule with lower rate
  *
- * From man iptables: "A rule using this extension will match until
+ * From limit expression documentation: "A rule using this extension will match until
  * this limit is reached "
  *
  * consider for example two rules: rule 1 that matches 50 pkts/sec and

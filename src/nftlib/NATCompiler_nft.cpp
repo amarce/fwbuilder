@@ -314,9 +314,9 @@ bool NATCompiler_nft::ConvertLoadBalancingRules::processNext()
  * This processor should be called after classifyNATRule. Should call
  * classifyNATRule after this processor again.
  *
- * This algorithm is very much specific to iptables. Platforms where
- * this simple algorithm for SDNAT rules is not appropriate, should
- * either implement equivalent of this processor using different
+ * This algorithm is tied to the nftables backend. Platforms where
+ * this simple algorithm for SDNAT rules is not appropriate should
+ * either implement equivalent of this processor using a different
  * algorithm, or should catch SDNAT rules and abort in their own
  * verifyNATRule processor.
  */
@@ -655,8 +655,7 @@ bool NATCompiler_nft::VerifyRules2::processNext()
 }
 
 /*
- * make sure combination of "-i" or "-o" interface spec and chosen chain
- * is allowed
+ * Placeholder for nftables-specific validation of interface/chain combinations.
  */
 bool NATCompiler_nft::VerifyRules3::processNext()
 {
@@ -666,41 +665,6 @@ bool NATCompiler_nft::VerifyRules3::processNext()
     assert(itf_i_re!=nullptr);
     RuleElement *itf_o_re = rule->getItfOutb();
     assert(itf_o_re!=nullptr);
-
-    if (rule->getRuleType()==NATRule::SNAT &&  ! itf_i_re->isAny())
-    {
-        // iptables does not allow "-i" in POSTROUTING chain
-        compiler->abort(
-            rule,
-            "Can not use inbound interface specification with "
-            "rules that translate source because iptables does not "
-            "allow \"-i\" in POSTROUTING chain");
-        return true;
-    }
-
-    if (rule->getRuleType()==NATRule::DNAT &&  ! itf_o_re->isAny())
-    {
-        // iptables does not allow "-o" in PREROUTING chain
-        compiler->abort(
-            rule,
-            "Can not use outbound interface specification with "
-            "rules that translate destination because iptables does not "
-            "allow \"-o\" in PREROUTING chain");
-        return true;
-    }
-
-    string chain = rule->getStr("ipt_chain");
-
-    if (chain == "OUTPUT" && ! itf_i_re->isAny())
-    {
-        // iptables does not allow "-i" in POSTROUTING chain
-        compiler->abort(
-            rule,
-            "Can not use inbound interface specification with "
-            "this rule  because iptables does not "
-            "allow \"-i\" in OUTPUT chain");
-        return true;
-    }
 
     tmp_queue.push_back(rule);
     return true;
@@ -1343,7 +1307,7 @@ bool NATCompiler_nft::alwaysUseMasquerading::processNext()
 /**
  * unlike standard inspector addressRanges in the base class NATCompiler,
  * this one does not expand address ranges in TSrc and TDst because
- * iptables supports ranges in those rule elements
+ * nftables supports ranges in those rule elements
  */
 bool NATCompiler_nft::ExpandAddressRanges::processNext()
 {
@@ -1794,13 +1758,12 @@ bool NATCompiler_nft::splitNONATRule::processNext()
  * (the one with "-j <branch_ruleset_name>") is entered. If branch
  * ruleset has -j SNAT, the command that sends control to the branch
  * should be in POSTROUTING. Attempt to place it in PREROUTING ends
- * with an error "iptables: Invalid argument".
+ * with an error indicating an invalid argument.
  *
  * Note that if branch rule set contains a mix of rules that use both
  * SNAT and DNAT targets, the branching rule (that should pass control
  * to the branch) can not be added to PREROUTING and POSTROUTING
- * chains, it just gives an error "iptables: Invalid argument" for both.
- * Tested with iptables 1.4.1.1 10/20/2009
+ * chains, it just gives an error for both.
  */
 bool NATCompiler_nft::splitNATBranchRule::processNext()
 {
@@ -2117,7 +2080,7 @@ bool NATCompiler_nft::decideOnTarget::processNext()
  * NOTE: this rule processor may place groups of interfaces in inbound
  * and outbound interface rule elements. Names of these groups were
  * specifically constructed to match "wildcard" interface
- * specifications supported by iptables, such as "eth+". Do not call
+ * specifications supported by nftables, such as "eth*". Do not call
  * rule processors that expand groups after AssignInterface.
  *
  */

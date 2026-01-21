@@ -593,10 +593,10 @@ QString CompilerDriver_nft::run(const std::string &cluster_id,
         string prolog_place = fw->getOptionsObject()->getStr("prolog_place");
         if (prolog_place == "") prolog_place="top";
 
-        /* there is no way to stick prolog commands between iptables
-         * reset and iptables rules if we use iptables-restore to
-         * activate policy. Therefore, if prolog needs to be ran after
-         * iptables flush and we use iptables-restore, we run prolog
+        /* there is no way to stick prolog commands between nftables
+         * reset and nftables rules if we use atomic nftables loading
+         * to activate policy. Therefore, if prolog needs to run after
+         * nftables flush and we use atomic loading, we run prolog
          * on top of the script.
          */
         if (!prolog_done &&
@@ -663,9 +663,9 @@ QString CompilerDriver_nft::run(const std::string &cluster_id,
         script_skeleton.setVariable("database", objdb->getFileName().c_str());
 
         /*
-         * Call reset_all function to flush and reset iptables, but only
-         * do this if we do not use iptables_restore. Reset is done as part
-         * of iptables-restore script in the latter case and commands are
+         * Call reset_all function to flush and reset nftables, but only
+         * do this if we do not use atomic nftables loading. Reset is done
+         * as part of the atomic load in the latter case and commands are
          * added in PolicyCompiler_nft::flushAndSetDefaultPolicy()
          */
         script_skeleton.setVariable("not_using_iptables_restore",
