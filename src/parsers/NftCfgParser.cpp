@@ -56,6 +56,16 @@ void NftCfgParser::parseTable()
             parseChain();
             continue;
         }
+        if (peek() == "set")
+        {
+            parseSetDefinition(false);
+            continue;
+        }
+        if (peek() == "map")
+        {
+            parseSetDefinition(true);
+            continue;
+        }
         consume();
     }
 
@@ -125,4 +135,54 @@ void NftCfgParser::parseRuleTokens(vector<string> &rule_tokens)
     if (rule_tokens.empty()) return;
 
     if (importer) importer->parseRuleTokens(rule_tokens);
+}
+
+void NftCfgParser::parseSetDefinition(bool is_map)
+{
+    consume();
+    if (!hasTokens()) return;
+    string name = consume();
+
+    if (importer) importer->startSetDefinition(name, is_map);
+
+    if (hasTokens() && peek() == "{") consume();
+
+    while (hasTokens() && peek() != "}")
+    {
+        if (peek() == ";")
+        {
+            consume();
+            continue;
+        }
+
+        vector<string> tokens;
+        parseDefinitionTokens(tokens);
+        if (!tokens.empty() && importer) importer->parseSetStatement(tokens);
+    }
+
+    if (hasTokens() && peek() == "}") consume();
+
+    if (importer) importer->endSetDefinition();
+}
+
+void NftCfgParser::parseDefinitionTokens(vector<string> &tokens)
+{
+    int depth = 0;
+    while (hasTokens())
+    {
+        if (peek() == ";" && depth == 0)
+        {
+            consume();
+            break;
+        }
+        if (peek() == "}" && depth == 0)
+        {
+            break;
+        }
+
+        string tok = consume();
+        if (tok == "{") depth++;
+        else if (tok == "}" && depth > 0) depth--;
+        tokens.push_back(tok);
+    }
 }

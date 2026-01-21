@@ -58,6 +58,7 @@ private slots:
     void IPTImporterTest();
     void IPTImporterNoNatTest();
     void IPTImporterParseVersionsTest();
+    void NftImporterSetMapTest();
 
 };
 
