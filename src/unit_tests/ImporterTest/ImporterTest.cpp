@@ -36,13 +36,17 @@
 #include "Importer.h"
 #include "IOSImporter.h"
 #include "IPTImporter.h"
+#include "NftImporter.h"
 #include "FWBTree.h"
 
 #include "fwbuilder/Policy.h"
 #include "fwbuilder/Rule.h"
+#include "fwbuilder/Firewall.h"
+#include "fwbuilder/AddressTable.h"
 #include "fwbuilder/TagService.h"
 #include "fwbuilder/Constants.h"
 #include "fwbuilder/FWException.h"
+#include "fwbuilder/FWReference.h"
 
 #include <QTest>
 #include <QDebug>
@@ -355,4 +359,107 @@ void ImporterTest::IPTImporterParseVersionsTest()
                        QString("test_data/%1.output").arg(file_name),
                        QString("%1.output").arg(file_name));
     }
+}
+
+void ImporterTest::NftImporterSetMapTest()
+{
+    platform = "nftables";
+
+    QString nft_config =
+        "table inet filter {\n"
+        "  set good_hosts {\n"
+        "    type ipv4_addr;\n"
+        "    elements = { 192.0.2.1, 198.51.100.0/24 };\n"
+        "  }\n"
+        "  map decision_map {\n"
+        "    type ipv4_addr : verdict;\n"
+        "    elements = { 203.0.113.5 : accept, 203.0.113.6 : drop };\n"
+        "  }\n"
+        "  chain input {\n"
+        "    type filter;\n"
+        "    hook input;\n"
+        "    policy drop;\n"
+        "    ip saddr @good_hosts accept;\n"
+        "    ip daddr @decision_map accept;\n"
+        "  }\n"
+        "}\n";
+
+    std::istringstream instream(nft_config.toStdString());
+
+    Importer* imp = new NftImporter(lib, instream, logger, "test_fw");
+    imp->setAddStandardCommentsFlag(true);
+
+    try {
+        imp->run();
+    } catch (const FWException &e) {
+        QFAIL(std::string("Exception thrown: ").append(e.toString()).data());
+    }
+
+    imp->finalize();
+
+    AddressTable *good_hosts = nullptr;
+    AddressTable *decision_map = nullptr;
+    list<FWObject*> tables = lib->getByTypeDeep(AddressTable::TYPENAME);
+    for (FWObject *obj : tables)
+    {
+        AddressTable *table = AddressTable::cast(obj);
+        if (!table) continue;
+        if (table->getName() == "good_hosts") good_hosts = table;
+        if (table->getName() == "decision_map") decision_map = table;
+    }
+
+    QVERIFY2(good_hosts != nullptr, "Expected nft set 'good_hosts' to import as AddressTable");
+    QVERIFY2(decision_map != nullptr, "Expected nft map 'decision_map' to import as AddressTable");
+    QVERIFY2(good_hosts->getChildrenCount() == 2,
+             "Expected nft set elements to populate AddressTable entries");
+
+    Firewall *fw = nullptr;
+    list<FWObject*> firewalls = lib->getByTypeDeep(Firewall::TYPENAME);
+    if (!firewalls.empty()) fw = Firewall::cast(*firewalls.begin());
+    QVERIFY2(fw != nullptr, "Expected firewall object after nft import");
+
+    Policy *policy = nullptr;
+    list<FWObject*> policies = fw->getByTypeDeep(Policy::TYPENAME);
+    for (FWObject *obj : policies)
+    {
+        Policy *candidate = Policy::cast(obj);
+        if (candidate && candidate->getName() == "input") policy = candidate;
+    }
+    QVERIFY2(policy != nullptr, "Expected nft input chain to import as Policy ruleset");
+
+    bool src_has_set = false;
+    bool dst_has_map = false;
+    list<FWObject*> rules = policy->getByTypeDeep(PolicyRule::TYPENAME);
+    for (FWObject *obj : rules)
+    {
+        PolicyRule *rule = PolicyRule::cast(obj);
+        if (!rule) continue;
+        RuleElementSrc *src = rule->getSrc();
+        RuleElementDst *dst = rule->getDst();
+        list<FWObject*> src_children = src->getChildren();
+        for (FWObject *child : src_children)
+        {
+            FWObject *resolved = FWReference::getObject(child);
+            if (resolved && AddressTable::isA(resolved) &&
+                resolved->getName() == "good_hosts")
+                src_has_set = true;
+        }
+        list<FWObject*> dst_children = dst->getChildren();
+        for (FWObject *child : dst_children)
+        {
+            FWObject *resolved = FWReference::getObject(child);
+            if (resolved && AddressTable::isA(resolved) &&
+                resolved->getName() == "decision_map")
+                dst_has_map = true;
+        }
+    }
+
+    QVERIFY2(src_has_set, "Expected nft set membership to populate rule source");
+    QVERIFY2(dst_has_map, "Expected nft map membership to populate rule destination");
+
+    QString log_output;
+    while (logger->ready())
+        log_output.append(logger->getLine().c_str());
+    QVERIFY2(log_output.contains("Warning: nft map 'decision_map' values are not imported"),
+             "Expected warning about nft map values not imported");
 }

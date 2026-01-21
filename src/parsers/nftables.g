@@ -43,11 +43,27 @@ cfgfile
     ;
 
 table_def
-    : "table" family:IDENT name:IDENT LBRACE chain_def* RBRACE
+    : "table" family:IDENT name:IDENT LBRACE (chain_def | set_def | map_def)* RBRACE
     ;
 
 chain_def
     : "chain" cname:IDENT LBRACE chain_stmt* RBRACE
+    ;
+
+set_def
+    : "set" name:IDENT LBRACE set_stmt* RBRACE
+    ;
+
+map_def
+    : "map" name:IDENT LBRACE map_stmt* RBRACE
+    ;
+
+set_stmt
+    : (IDENT)+ SEMI
+    ;
+
+map_stmt
+    : (IDENT)+ SEMI
     ;
 
 chain_stmt

@@ -31,6 +31,7 @@
 
 #include <QString>
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -56,8 +57,36 @@ class NftImporter : public Importer
     std::string nat_port_range_start;
     std::string nat_port_range_end;
 
+    struct NftSetDefinition
+    {
+        std::string name;
+        std::string key_type;
+        std::string value_type;
+        std::vector<std::string> elements;
+        std::vector<std::pair<std::string, std::string>> map_elements;
+        bool is_map = false;
+        bool has_elements = false;
+    };
+
+    std::map<std::string, NftSetDefinition> set_definitions;
+    std::map<std::string, libfwbuilder::FWObject*> set_objects;
+    std::string current_set_name;
+    bool current_set_is_map = false;
+
+    std::string src_set_name;
+    std::string dst_set_name;
+    bool src_set_is_map = false;
+    bool dst_set_is_map = false;
+
     void pushPolicyRule();
     void pushNATRule();
+
+    bool isAddressSetType(const std::string &type_name) const;
+    void parseSetTypeStatement(const std::vector<std::string> &tokens);
+    void parseSetElementsStatement(const std::vector<std::string> &tokens);
+    libfwbuilder::FWObject* ensureSetObject(const std::string &name, bool is_map);
+    void populateSetElements(libfwbuilder::FWObject *obj,
+                             const NftSetDefinition &definition);
 
     void parseAddress(const std::string &value,
                       std::string &address,
@@ -68,6 +97,9 @@ class NftImporter : public Importer
                         std::string &range_end) const;
 
     bool isNatTarget() const;
+
+    libfwbuilder::FWObject* makeSrcObj() override;
+    libfwbuilder::FWObject* makeDstObj() override;
 
 public:
     NftImporter(libfwbuilder::FWObject *lib,
@@ -85,6 +117,10 @@ public:
     void setChainHook(const std::string &hook_name);
     void setChainPolicy(const std::string &policy);
 
+    void startSetDefinition(const std::string &name, bool is_map);
+    void parseSetStatement(const std::vector<std::string> &tokens);
+    void endSetDefinition();
+
     void setInterfaceIn(const std::string &name);
     void setInterfaceOut(const std::string &name);
 
@@ -93,6 +129,8 @@ public:
     void setDestinationAddress(const std::string &addr);
     void setSourcePortRange(const std::string &range);
     void setDestinationPortRange(const std::string &range);
+    void setSourceSet(const std::string &name, bool is_map);
+    void setDestinationSet(const std::string &name, bool is_map);
 
     void setTarget(const std::string &action);
     void setNatTo(const std::string &addr);

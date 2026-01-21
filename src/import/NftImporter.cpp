@@ -25,6 +25,7 @@
 
 #include "fwbuilder/Address.h"
 #include "fwbuilder/AddressRange.h"
+#include "fwbuilder/AddressTable.h"
 #include "fwbuilder/FWObjectDatabase.h"
 #include "fwbuilder/InetAddr.h"
 #include "fwbuilder/Library.h"
@@ -80,6 +81,11 @@ void NftImporter::clear()
     nat_nm = "";
     nat_port_range_start = "";
     nat_port_range_end = "";
+
+    src_set_name = "";
+    dst_set_name = "";
+    src_set_is_map = false;
+    dst_set_is_map = false;
 }
 
 void NftImporter::setTable(const std::string &table_name)
@@ -117,6 +123,59 @@ void NftImporter::setChainPolicy(const std::string &policy)
         setDefaultAction("DROP");
     else if (policy == "reject")
         setDefaultAction("REJECT");
+}
+
+void NftImporter::startSetDefinition(const std::string &name, bool is_map)
+{
+    current_set_name = name;
+    current_set_is_map = is_map;
+
+    if (set_definitions.count(name) != 0)
+    {
+        addMessageToLog(
+            QString("Warning: nft %1 '%2' redefined; last definition wins.")
+                .arg(is_map ? "map" : "set")
+                .arg(QString::fromUtf8(name.c_str())));
+    }
+
+    NftSetDefinition def;
+    def.name = name;
+    def.is_map = is_map;
+    set_definitions[name] = def;
+}
+
+void NftImporter::parseSetStatement(const std::vector<std::string> &tokens)
+{
+    if (current_set_name.empty() || tokens.empty()) return;
+
+    if (tokens[0] == "type")
+    {
+        parseSetTypeStatement(tokens);
+        return;
+    }
+
+    if (tokens[0] == "elements")
+    {
+        parseSetElementsStatement(tokens);
+        return;
+    }
+}
+
+void NftImporter::endSetDefinition()
+{
+    if (current_set_name.empty()) return;
+
+    auto it = set_definitions.find(current_set_name);
+    if (it == set_definitions.end()) return;
+
+    FWObject *obj = ensureSetObject(current_set_name, current_set_is_map);
+    if (obj)
+    {
+        populateSetElements(obj, it->second);
+    }
+
+    current_set_name = "";
+    current_set_is_map = false;
 }
 
 void NftImporter::setInterfaceIn(const std::string &name)
@@ -170,6 +229,24 @@ void NftImporter::setSourceAddress(const std::string &addr)
 void NftImporter::setDestinationAddress(const std::string &addr)
 {
     parseAddress(addr, dst_a, dst_nm);
+}
+
+void NftImporter::setSourceSet(const std::string &name, bool is_map)
+{
+    src_set_name = name;
+    src_set_is_map = is_map;
+    src_a = "";
+    src_nm = "";
+    ensureSetObject(name, is_map);
+}
+
+void NftImporter::setDestinationSet(const std::string &name, bool is_map)
+{
+    dst_set_name = name;
+    dst_set_is_map = is_map;
+    dst_a = "";
+    dst_nm = "";
+    ensureSetObject(name, is_map);
 }
 
 void NftImporter::parsePortRange(const std::string &value,
@@ -241,14 +318,40 @@ void NftImporter::parseRuleTokens(const vector<string> &tokens)
             const string &next = tokens[i + 1];
             if (next == "saddr")
             {
-                setSourceAddress(tokens[i + 2]);
-                i += 2;
+                if (i + 3 < tokens.size() &&
+                    (tokens[i + 2] == "map" || tokens[i + 2] == "vmap") &&
+                    !tokens[i + 3].empty() && tokens[i + 3][0] == '@')
+                {
+                    setSourceSet(tokens[i + 3].substr(1), true);
+                    i += 3;
+                } else if (!tokens[i + 2].empty() && tokens[i + 2][0] == '@')
+                {
+                    setSourceSet(tokens[i + 2].substr(1), false);
+                    i += 2;
+                } else
+                {
+                    setSourceAddress(tokens[i + 2]);
+                    i += 2;
+                }
                 continue;
             }
             if (next == "daddr")
             {
-                setDestinationAddress(tokens[i + 2]);
-                i += 2;
+                if (i + 3 < tokens.size() &&
+                    (tokens[i + 2] == "map" || tokens[i + 2] == "vmap") &&
+                    !tokens[i + 3].empty() && tokens[i + 3][0] == '@')
+                {
+                    setDestinationSet(tokens[i + 3].substr(1), true);
+                    i += 3;
+                } else if (!tokens[i + 2].empty() && tokens[i + 2][0] == '@')
+                {
+                    setDestinationSet(tokens[i + 2].substr(1), false);
+                    i += 2;
+                } else
+                {
+                    setDestinationAddress(tokens[i + 2]);
+                    i += 2;
+                }
                 continue;
             }
             if (next == "protocol")
@@ -261,14 +364,40 @@ void NftImporter::parseRuleTokens(const vector<string> &tokens)
 
         if (tok == "saddr" && i + 1 < tokens.size())
         {
-            setSourceAddress(tokens[i + 1]);
-            i += 1;
+            if (i + 2 < tokens.size() &&
+                (tokens[i + 1] == "map" || tokens[i + 1] == "vmap") &&
+                !tokens[i + 2].empty() && tokens[i + 2][0] == '@')
+            {
+                setSourceSet(tokens[i + 2].substr(1), true);
+                i += 2;
+            } else if (!tokens[i + 1].empty() && tokens[i + 1][0] == '@')
+            {
+                setSourceSet(tokens[i + 1].substr(1), false);
+                i += 1;
+            } else
+            {
+                setSourceAddress(tokens[i + 1]);
+                i += 1;
+            }
             continue;
         }
         if (tok == "daddr" && i + 1 < tokens.size())
         {
-            setDestinationAddress(tokens[i + 1]);
-            i += 1;
+            if (i + 2 < tokens.size() &&
+                (tokens[i + 1] == "map" || tokens[i + 1] == "vmap") &&
+                !tokens[i + 2].empty() && tokens[i + 2][0] == '@')
+            {
+                setDestinationSet(tokens[i + 2].substr(1), true);
+                i += 2;
+            } else if (!tokens[i + 1].empty() && tokens[i + 1][0] == '@')
+            {
+                setDestinationSet(tokens[i + 1].substr(1), false);
+                i += 1;
+            } else
+            {
+                setDestinationAddress(tokens[i + 1]);
+                i += 1;
+            }
             continue;
         }
 
@@ -390,6 +519,30 @@ void NftImporter::pushRule()
         newPolicyRule();
         pushPolicyRule();
     }
+}
+
+FWObject* NftImporter::makeSrcObj()
+{
+    if (!src_set_name.empty())
+    {
+        FWObject *obj = ensureSetObject(src_set_name, src_set_is_map);
+        if (obj && isObjectBroken(obj))
+            error_tracker->registerError(getBrokenObjectError(obj));
+        return obj;
+    }
+    return Importer::makeSrcObj();
+}
+
+FWObject* NftImporter::makeDstObj()
+{
+    if (!dst_set_name.empty())
+    {
+        FWObject *obj = ensureSetObject(dst_set_name, dst_set_is_map);
+        if (obj && isObjectBroken(obj))
+            error_tracker->registerError(getBrokenObjectError(obj));
+        return obj;
+    }
+    return Importer::makeDstObj();
 }
 
 void NftImporter::pushPolicyRule()
@@ -643,4 +796,180 @@ FWObject* NftImporter::createUDPService(const QString &)
                         dst_port_range_end.empty() ? "0" : dst_port_range_end.c_str(),
                         "udp");
     return commitObject(service_maker->createObject(sig));
+}
+
+bool NftImporter::isAddressSetType(const std::string &type_name) const
+{
+    if (type_name == "ipv4_addr" || type_name == "ipv6_addr" || type_name == "inet_addr")
+        return true;
+    return false;
+}
+
+void NftImporter::parseSetTypeStatement(const std::vector<std::string> &tokens)
+{
+    if (current_set_name.empty() || tokens.size() < 2) return;
+
+    auto &def = set_definitions[current_set_name];
+
+    string type_token = tokens[1];
+    string value_type;
+
+    string::size_type pos = type_token.find(':');
+    if (pos != string::npos)
+    {
+        value_type = type_token.substr(pos + 1);
+        type_token = type_token.substr(0, pos);
+    } else
+    {
+        for (size_t i = 2; i < tokens.size(); ++i)
+        {
+            if (tokens[i] == ":" && i + 1 < tokens.size())
+            {
+                value_type = tokens[i + 1];
+                break;
+            }
+        }
+    }
+
+    def.key_type = type_token;
+    def.value_type = value_type;
+}
+
+void NftImporter::parseSetElementsStatement(const std::vector<std::string> &tokens)
+{
+    if (current_set_name.empty()) return;
+
+    auto &def = set_definitions[current_set_name];
+    def.has_elements = true;
+
+    auto start_it = std::find(tokens.begin(), tokens.end(), "{");
+    auto end_it = std::find(tokens.rbegin(), tokens.rend(), "}");
+    if (start_it == tokens.end() || end_it == tokens.rend()) return;
+
+    size_t start = static_cast<size_t>(std::distance(tokens.begin(), start_it)) + 1;
+    size_t end = tokens.size() - static_cast<size_t>(std::distance(tokens.rbegin(), end_it)) - 1;
+    if (end <= start) return;
+
+    if (def.is_map)
+    {
+        for (size_t i = start; i < end; ++i)
+        {
+            const string &key = tokens[i];
+            if (key == ":" || key == "=") continue;
+            if (i + 2 < end && tokens[i + 1] == ":")
+            {
+                def.map_elements.emplace_back(key, tokens[i + 2]);
+                i += 2;
+                continue;
+            }
+            def.elements.push_back(key);
+        }
+        return;
+    }
+
+    for (size_t i = start; i < end; ++i)
+    {
+        const string &tok = tokens[i];
+        if (tok == "=" || tok == "{" || tok == "}") continue;
+        def.elements.push_back(tok);
+    }
+}
+
+FWObject* NftImporter::ensureSetObject(const std::string &name, bool is_map)
+{
+    auto it = set_objects.find(name);
+    if (it != set_objects.end()) return it->second;
+
+    if (set_definitions.count(name) == 0)
+    {
+        NftSetDefinition def;
+        def.name = name;
+        def.is_map = is_map;
+        set_definitions[name] = def;
+        addMessageToLog(
+            QString("Warning: nft %1 '%2' referenced but not defined.")
+                .arg(is_map ? "map" : "set")
+                .arg(QString::fromUtf8(name.c_str())));
+    }
+
+    ObjectSignature sig(error_tracker);
+    sig.type_name = AddressTable::TYPENAME;
+    sig.object_name = QString::fromUtf8(name.c_str());
+    sig.address_table_name = "";
+    FWObject *obj = address_maker->createObject(sig);
+
+    if (obj)
+    {
+        addStandardImportComment(
+            obj,
+            QString("Imported from nft %1 definition")
+                .arg(set_definitions[name].is_map ? "map" : "set"));
+        obj = commitObject(obj);
+        set_objects[name] = obj;
+    }
+
+    return obj;
+}
+
+void NftImporter::populateSetElements(FWObject *obj, const NftSetDefinition &definition)
+{
+    AddressTable *table = AddressTable::cast(obj);
+    if (!table) return;
+
+    if (!definition.key_type.empty() && !isAddressSetType(definition.key_type))
+    {
+        QString err = QString("nft %1 '%2' uses unsupported key type '%3'.")
+                          .arg(definition.is_map ? "map" : "set")
+                          .arg(QString::fromUtf8(definition.name.c_str()))
+                          .arg(QString::fromUtf8(definition.key_type.c_str()));
+        addMessageToLog("Warning: " + err);
+        registerBrokenObject(table, err);
+        return;
+    }
+
+    if (definition.is_map)
+    {
+        if (!definition.map_elements.empty())
+        {
+            addMessageToLog(
+                QString("Warning: nft map '%1' values are not imported; only keys are used.")
+                    .arg(QString::fromUtf8(definition.name.c_str())));
+            QString err =
+                QObject::tr("nft map '%1' values are not represented in the import.")
+                    .arg(QString::fromUtf8(definition.name.c_str()));
+            registerBrokenObject(table, err);
+        }
+    }
+
+    auto add_element = [&](const std::string &token) {
+        if (token.find('-') != string::npos)
+        {
+            addMessageToLog(
+                QString("Warning: nft %1 '%2' element '%3' is an address range "
+                        "and was skipped during import.")
+                    .arg(definition.is_map ? "map" : "set")
+                    .arg(QString::fromUtf8(definition.name.c_str()))
+                    .arg(QString::fromUtf8(token.c_str())));
+            return;
+        }
+
+        string addr;
+        string nm;
+        parseAddress(token, addr, nm);
+        if (addr.empty()) return;
+        FWObject *addr_obj = makeAddressObj(addr, nm);
+        if (addr_obj) table->addRef(addr_obj);
+    };
+
+    if (definition.is_map)
+    {
+        for (const auto &entry : definition.map_elements)
+            add_element(entry.first);
+        for (const auto &entry : definition.elements)
+            add_element(entry);
+    } else
+    {
+        for (const auto &entry : definition.elements)
+            add_element(entry);
+    }
 }

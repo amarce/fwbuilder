@@ -19,6 +19,8 @@ class NftCfgParser
     void parseTable();
     void parseChain();
     void parseRuleTokens(std::vector<std::string> &rule_tokens);
+    void parseSetDefinition(bool is_map);
+    void parseDefinitionTokens(std::vector<std::string> &tokens);
 
 public:
     NftImporter *importer;
