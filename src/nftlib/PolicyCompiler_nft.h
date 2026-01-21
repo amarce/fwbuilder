@@ -107,7 +107,6 @@ protected:
                                         bool v6=false);
         std::string getAddressTableVarName(libfwbuilder::FWObject *iface);
 
-        bool newIptables(const std::string &version);
 
         /**
          * internal: scans child objects of interface iface, both IPv4
