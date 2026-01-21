@@ -54,5 +54,10 @@ block_action() {
     $NFT add rule ip filter INPUT ip saddr {{$ssh_management_address}} tcp dport 22 ct state { new, established } accept
     $NFT add rule ip filter OUTPUT ip daddr {{$ssh_management_address}} tcp sport 22 ct state { established, related } accept
 {{endif}}
+{{if have_ipv6}}
+    # backup ssh access
+    $NFT add rule ip6 filter INPUT ip6 saddr {{$ssh_management_address}} tcp dport 22 ct state { new, established } accept
+    $NFT add rule ip6 filter OUTPUT ip6 daddr {{$ssh_management_address}} tcp sport 22 ct state { established, related } accept
+{{endif}}
 {{endif}}
 }
