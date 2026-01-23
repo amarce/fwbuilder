@@ -25,9 +25,9 @@
 
 #include "OSConfigurator_linux24_nft.h"
 
-#include "Configlet.h"
-
 #include "fwbuilder/Firewall.h"
+
+#include "Configlet.h"
 #include "fwbuilder/FWOptions.h"
 #include "fwbuilder/Resources.h"
 
