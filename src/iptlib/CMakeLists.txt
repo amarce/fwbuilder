@@ -32,9 +32,9 @@ target_include_directories(iptlib PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
 
 IF (UseQt6)
-    target_link_libraries(iptlib compilerdriver Qt6::Core)
+    target_link_libraries(iptlib compilerdriver fwcompiler Qt6::Core)
 ELSE()
-    target_link_libraries(iptlib compilerdriver Qt5::Core)
+    target_link_libraries(iptlib compilerdriver fwcompiler Qt5::Core)
 ENDIF()
 
 IF (WIN32)
@@ -42,4 +42,3 @@ IF (WIN32)
 ENDIF()
 
 target_compile_options(iptlib PRIVATE ${CXX_DEFAULT_FLAGS})
-
