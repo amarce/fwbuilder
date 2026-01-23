@@ -28,7 +28,6 @@
 #include "CompilerDriver_nft.h"
 #include "PolicyCompiler_nft.h"
 #include "nftables_options.h"
-#include "PolicyCompiler_secuwall.h"
 
 #include "fwbuilder/Address.h"
 #include "fwbuilder/FWException.h"
@@ -218,17 +217,10 @@ std::unique_ptr<PolicyCompiler_nft> CompilerDriver_nft::createPolicyCompiler(
     string platform_family = Resources::platform_res[platform]->
         getResourceStr("/FWBuilderResources/Target/family");
 
-    std::unique_ptr<PolicyCompiler_nft> policy_compiler;
-
-    if (fw->getStr("host_OS") == "secuwall") {
-        policy_compiler = std::unique_ptr<PolicyCompiler_nft>(
-            new PolicyCompiler_secuwall(objdb,fw, ipv6_policy, oscnf,
-                                        minus_n_commands_filter));
-    } else {
-        policy_compiler = std::unique_ptr<PolicyCompiler_nft>(
+    std::unique_ptr<PolicyCompiler_nft> policy_compiler =
+        std::unique_ptr<PolicyCompiler_nft>(
             new PolicyCompiler_nft(objdb,fw, ipv6_policy, oscnf,
                                    minus_n_commands_filter));
-    }
 
     if (policy_compiler.get()==nullptr)
         abort("Unrecognized firewall platform " +
