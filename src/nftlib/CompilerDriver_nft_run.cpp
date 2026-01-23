@@ -89,7 +89,7 @@ using namespace fwcompiler;
 
 extern QString user_name;
 
-FWObject* create_combinedAddress(int id)
+static FWObject* create_combinedAddress(int id)
 {
     FWObject *nobj = new combinedAddress();
     if (id > -1) nobj->setId(id);

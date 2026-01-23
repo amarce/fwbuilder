@@ -241,7 +241,7 @@ void NATCompiler_ipt::_expand_interface(Rule *rule,
     expand_interface_with_phys_address(this, rule, iface, ol1, list_result);
 }
 
-bool compare_addresses_ptr(const InetAddr* a1, const InetAddr* a2)
+static bool compare_addresses_ptr(const InetAddr* a1, const InetAddr* a2)
 {
     return (*a1 < *a2);
 }
@@ -2687,4 +2687,3 @@ list<string> NATCompiler_ipt::getUsedChains()
         res.push_back(it->first);
     return res;
 }
-
