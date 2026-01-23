@@ -84,13 +84,14 @@ public:
 
     bool    getEstablished();
     void    setEstablished(bool f);
+
+    static std::string getFlagName(TCPFlag flag);
     
 };
 
 }
 
 #endif
-
 
 
 

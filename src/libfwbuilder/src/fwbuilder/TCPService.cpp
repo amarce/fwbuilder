@@ -211,6 +211,26 @@ void   TCPService::setAllTCPFlagMasks()
     setBool( flags_masks[FIN] , true );    
 }
 
+string TCPService::getFlagName(TCPFlag flag)
+{
+    switch (flag)
+    {
+    case URG:
+        return "urg";
+    case ACK:
+        return "ack";
+    case PSH:
+        return "psh";
+    case RST:
+        return "rst";
+    case SYN:
+        return "syn";
+    case FIN:
+        return "fin";
+    }
+
+    return "";
+}
 
 
 
