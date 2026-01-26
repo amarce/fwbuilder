@@ -238,7 +238,7 @@ string PolicyCompiler_nft::getAddressTableVarName(FWObject *at)
 
 bool PolicyCompiler_nft::isNftSetOptimizationEnabled() const
 {
-    FWOptions *options = getCachedFwOpt();
+    const FWOptions *options = getCachedFwOpt();
     if (options == nullptr) return true;
     return !options->getBool("disable_nft_set_optimization");
 }
