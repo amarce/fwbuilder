@@ -103,6 +103,179 @@ string PolicyCompiler_nft::PrintRule::_printSingleOptionWithNegation(
     return option + " " + arg + " ";
 }
 
+void PolicyCompiler_nft::PrintRule::resetSetTracking()
+{
+    omit_src_addr_for_concat = false;
+    omit_dst_addr_for_concat = false;
+    omit_src_port_for_concat = false;
+    omit_dst_port_for_concat = false;
+}
+
+string PolicyCompiler_nft::PrintRule::trimSpaces(const string &value) const
+{
+    size_t start = value.find_first_not_of(' ');
+    if (start == string::npos) return "";
+    size_t end = value.find_last_not_of(' ');
+    return value.substr(start, end - start + 1);
+}
+
+vector<string> PolicyCompiler_nft::PrintRule::collectAddressSetEntries(
+    RuleElement *rel)
+{
+    vector<string> entries;
+    for (FWObject::iterator i=rel->begin(); i!=rel->end(); ++i)
+    {
+        FWObject *o = *i;
+        if (FWReference::cast(o)!=nullptr) o = FWReference::cast(o)->getPointer();
+        Address *addr = Address::cast(o);
+        if (addr == nullptr) continue;
+        string entry = formatAddressSetEntry(addr);
+        entry = trimSpaces(entry);
+        if (!entry.empty()) entries.push_back(entry);
+    }
+    return entries;
+}
+
+vector<string> PolicyCompiler_nft::PrintRule::collectPortSetEntries(
+    RuleElementSrv *rel, bool src_ports)
+{
+    vector<string> entries;
+    for (FWObject::iterator i=rel->begin(); i!=rel->end(); ++i)
+    {
+        FWObject *o = *i;
+        if (FWReference::cast(o)!=nullptr) o = FWReference::cast(o)->getPointer();
+        Service *srv = Service::cast(o);
+        if (srv == nullptr) return vector<string>();
+        if (!TCPService::isA(srv) && !UDPService::isA(srv))
+            return vector<string>();
+        string entry = src_ports ? _printSrcPorts(srv) : _printDstPorts(srv);
+        entry = trimSpaces(entry);
+        if (entry.empty()) return vector<string>();
+        entries.push_back(entry);
+    }
+    return entries;
+}
+
+string PolicyCompiler_nft::PrintRule::formatAddressSetEntry(Address *addr)
+{
+    if (AddressRange::cast(addr)!=nullptr)
+    {
+        AddressRange *ar = AddressRange::cast(addr);
+        const InetAddr &range_start = ar->getRangeStart();
+        const InetAddr &range_end = ar->getRangeEnd();
+        if (range_start != range_end)
+            return range_start.toString() + "-" + range_end.toString();
+        return range_start.toString();
+    }
+    return _printAddr(addr);
+}
+
+string PolicyCompiler_nft::PrintRule::printAddressSet(
+    RuleElement *rel, const string &direction)
+{
+    PolicyCompiler_nft *ipt_comp=dynamic_cast<PolicyCompiler_nft*>(compiler);
+    vector<string> entries = collectAddressSetEntries(rel);
+    if (entries.empty()) return "";
+
+    std::ostringstream ostr;
+    ostr << (ipt_comp->ipv6 ? "ip6 " : "ip ") << direction;
+    if (rel->getNeg()) ostr << " != { ";
+    else ostr << " { ";
+
+    for (size_t i=0; i<entries.size(); ++i)
+    {
+        if (i != 0) ostr << ", ";
+        ostr << entries[i];
+    }
+    ostr << " } ";
+    return ostr.str();
+}
+
+string PolicyCompiler_nft::PrintRule::printPortSet(
+    RuleElementSrv *rel, const string &proto, bool src_ports)
+{
+    vector<string> entries = collectPortSetEntries(rel, src_ports);
+    if (entries.empty()) return "";
+
+    std::ostringstream ostr;
+    ostr << proto << (src_ports ? " sport" : " dport");
+    if (rel->getNeg()) ostr << " != { ";
+    else ostr << " { ";
+
+    for (size_t i=0; i<entries.size(); ++i)
+    {
+        if (i != 0) ostr << ", ";
+        ostr << entries[i];
+    }
+    ostr << " } ";
+    return ostr.str();
+}
+
+string PolicyCompiler_nft::PrintRule::printConcatenatedSet(PolicyRule *rule)
+{
+    PolicyCompiler_nft *ipt_comp = dynamic_cast<PolicyCompiler_nft*>(compiler);
+    if (!ipt_comp->isNftSetOptimizationEnabled()) return "";
+
+    RuleElementSrc *srcrel = rule->getSrc();
+    RuleElementDst *dstrel = rule->getDst();
+    RuleElementSrv *srvrel = rule->getSrv();
+    if (srvrel->isAny()) return "";
+    if (srcrel->getNeg() || dstrel->getNeg() || srvrel->getNeg()) return "";
+    if (srcrel->getBool("single_object_negation") ||
+        dstrel->getBool("single_object_negation") ||
+        srvrel->getBool("single_object_negation"))
+        return "";
+
+    Service *srv = compiler->getFirstSrv(rule);
+    if (!TCPService::isA(srv) && !UDPService::isA(srv)) return "";
+
+    vector<string> dst_ports = collectPortSetEntries(srvrel, false);
+    if (dst_ports.size() <= 1) return "";
+    vector<string> src_ports = collectPortSetEntries(srvrel, true);
+    if (!src_ports.empty()) return "";
+
+    RuleElement *addr_rel = nullptr;
+    string direction;
+    if (ipt_comp->canUseNftSetForAddresses(srcrel))
+    {
+        addr_rel = srcrel;
+        direction = "saddr";
+        omit_src_addr_for_concat = true;
+    } else if (ipt_comp->canUseNftSetForAddresses(dstrel))
+    {
+        addr_rel = dstrel;
+        direction = "daddr";
+        omit_dst_addr_for_concat = true;
+    } else return "";
+
+    vector<string> addr_entries = collectAddressSetEntries(addr_rel);
+    if (addr_entries.size() <= 1) return "";
+
+    vector<string> tuples;
+    for (size_t i=0; i<addr_entries.size(); ++i)
+    {
+        for (size_t j=0; j<dst_ports.size(); ++j)
+        {
+            tuples.push_back(addr_entries[i] + " . " + dst_ports[j]);
+        }
+    }
+    if (tuples.empty()) return "";
+
+    omit_dst_port_for_concat = true;
+
+    string proto = TCPService::isA(srv) ? "tcp" : "udp";
+    std::ostringstream ostr;
+    ostr << (ipt_comp->ipv6 ? "ip6 " : "ip ")
+         << direction << " . " << proto << " dport { ";
+    for (size_t i=0; i<tuples.size(); ++i)
+    {
+        if (i != 0) ostr << ", ";
+        ostr << tuples[i];
+    }
+    ostr << " } ";
+    return ostr.str();
+}
+
 void PolicyCompiler_nft::PrintRule::initializeMinusNTracker()
 {
     PolicyCompiler_nft *ipt_comp = dynamic_cast<PolicyCompiler_nft*>(compiler);
@@ -381,8 +554,7 @@ string PolicyCompiler_nft::PrintRule::_printTarget(PolicyRule *rule)
 
 string PolicyCompiler_nft::PrintRule::_printMultiport(PolicyRule *rule)
 {
-    (void)rule;
-    return "";
+    return printConcatenatedSet(rule);
 }
 
 string PolicyCompiler_nft::PrintRule::_printDirectionAndInterface(PolicyRule *rule)
@@ -829,7 +1001,8 @@ string PolicyCompiler_nft::PrintRule::_printSrcService(RuleElementSrv  *rel)
             if (!str.empty())
             {
                 string proto = TCPService::isA(srv) ? "tcp" : "udp";
-                ostr << proto << " sport " << str << " ";
+                ostr << _printSingleOptionWithNegation(
+                    proto + " sport", rel, str);
             }
         }
         if (TCPService::isA(srv))
@@ -869,25 +1042,10 @@ string PolicyCompiler_nft::PrintRule::_printSrcService(RuleElementSrv  *rel)
         }
     } else
     {
-        string str;
-        for (FWObject::iterator i=rel->begin(); i!=rel->end(); i++)
-        {
-            FWObject *o= *i;
-            if (FWReference::cast(o)!=nullptr) o=FWReference::cast(o)->getPointer();
-
-            Service *s=Service::cast( o );
-            assert(s);
-            if (UDPService::isA(srv) || TCPService::isA(srv))
-            {
-                string str1 = _printSrcPorts( s );
-                if (str!="" && str1!="") str+=",";
-                str+=str1;
-            }
-        }
-        if ( !str.empty() )
+        if (UDPService::isA(srv) || TCPService::isA(srv))
         {
             string proto = TCPService::isA(srv) ? "tcp" : "udp";
-            ostr << proto << " sport { " << str << " } ";
+            ostr << printPortSet(rel, proto, true);
         }
     }
     return ostr.str();
@@ -910,7 +1068,8 @@ string PolicyCompiler_nft::PrintRule::_printDstService(RuleElementSrv  *rel)
             if (! str.empty() )
             {
                 string proto = TCPService::isA(srv) ? "tcp" : "udp";
-                ostr << proto << " dport " << str << " ";
+                ostr << _printSingleOptionWithNegation(
+                    proto + " dport", rel, str);
             }
         }
         if (TCPService::isA(srv))
@@ -954,25 +1113,10 @@ string PolicyCompiler_nft::PrintRule::_printDstService(RuleElementSrv  *rel)
         }
     } else
     {
-        string str;
-        for (FWObject::iterator i=rel->begin(); i!=rel->end(); i++)
-        {
-            FWObject *o= *i;
-            if (FWReference::cast(o)!=nullptr) o=FWReference::cast(o)->getPointer();
-
-            Service *s=Service::cast( o );
-            assert(s);
-            if (UDPService::isA(srv) || TCPService::isA(srv))
-            {
-                string str1 = _printDstPorts( s );
-                if (str!="" && str1!="") str+=",";
-                str+=str1;
-            }
-        }
-        if ( !str.empty() )
+        if (UDPService::isA(srv) || TCPService::isA(srv))
         {
             string proto = TCPService::isA(srv) ? "tcp" : "udp";
-            ostr << proto << " dport { " << str << " } ";
+            ostr << printPortSet(rel, proto, false);
         }
     }
     return ostr.str();
@@ -982,6 +1126,8 @@ string PolicyCompiler_nft::PrintRule::_printSrcAddr(RuleElement *rel, Address  *
 {
     PolicyCompiler_nft *ipt_comp=dynamic_cast<PolicyCompiler_nft*>(compiler);
     string res;
+    if (rel->size() > 1 && ipt_comp->canUseNftSetForAddresses(rel))
+        return printAddressSet(rel, "saddr");
     if (AddressRange::cast(o)!=nullptr)
     {
         AddressRange *ar = AddressRange::cast(o);
@@ -1018,6 +1164,8 @@ string PolicyCompiler_nft::PrintRule::_printDstAddr(RuleElement *rel, Address  *
 {
     PolicyCompiler_nft *ipt_comp=dynamic_cast<PolicyCompiler_nft*>(compiler);
     string res;
+    if (rel->size() > 1 && ipt_comp->canUseNftSetForAddresses(rel))
+        return printAddressSet(rel, "daddr");
     if (AddressRange::cast(o)!=nullptr)
     {
         AddressRange *ar = AddressRange::cast(o);
@@ -1209,6 +1357,7 @@ PolicyCompiler_nft::PrintRule::PrintRule(const std::string &name) :
 { 
     init = true; 
     print_once_on_top = true;
+    resetSetTracking();
     // use delayed initialization for ipt_comp->minus_n_commands
     // because it requires pointer to the compiler which has not been
     // initialized yet when this constructor is executed.
@@ -1257,16 +1406,24 @@ string PolicyCompiler_nft::PrintRule::PolicyRuleToString(PolicyRule *rule)
     FWObject    *ref;
 
     RuleElementSrc *srcrel=rule->getSrc();
-    ref=srcrel->front();
-    Address        *src=Address::cast(FWReference::cast(ref)->getPointer());
-    if(src==nullptr)
-        compiler->abort(rule, string("Broken SRC in ") + rule->getLabel());
+    Address        *src=nullptr;
+    if (!srcrel->isAny())
+    {
+        ref=srcrel->front();
+        src=Address::cast(FWReference::cast(ref)->getPointer());
+        if(src==nullptr)
+            compiler->abort(rule, string("Broken SRC in ") + rule->getLabel());
+    }
 
     RuleElementDst *dstrel=rule->getDst();
-    ref=dstrel->front();
-    Address        *dst=Address::cast(FWReference::cast(ref)->getPointer());
-    if(dst==nullptr)
-        compiler->abort(rule, string("Broken DST in ") + rule->getLabel());
+    Address        *dst=nullptr;
+    if (!dstrel->isAny())
+    {
+        ref=dstrel->front();
+        dst=Address::cast(FWReference::cast(ref)->getPointer());
+        if(dst==nullptr)
+            compiler->abort(rule, string("Broken DST in ") + rule->getLabel());
+    }
 
     RuleElementSrv *srvrel=rule->getSrv();
     ref=srvrel->front();
@@ -1278,6 +1435,7 @@ string PolicyCompiler_nft::PrintRule::PolicyRuleToString(PolicyRule *rule)
     std::ostringstream  command_line;
 
     have_m_iprange = false;
+    resetSetTracking();
 
     command_line << _startRuleLine();
 
@@ -1286,7 +1444,7 @@ string PolicyCompiler_nft::PrintRule::PolicyRuleToString(PolicyRule *rule)
     command_line << _printProtocol(srv);
     command_line << _printMultiport(rule);
 
-    if (!src->isAny()) 
+    if (src!=nullptr && !omit_src_addr_for_concat) 
     {
         if (physAddress::isA(src) || combinedAddress::isA(src))
         {
@@ -1337,12 +1495,14 @@ string PolicyCompiler_nft::PrintRule::PolicyRuleToString(PolicyRule *rule)
             command_line << _printSrcAddr(srcrel, src);
 
     }
-    command_line << _printSrcService(srvrel);
+    if (!omit_src_port_for_concat)
+        command_line << _printSrcService(srvrel);
 
-    if (!dst->isAny()) 
+    if (dst!=nullptr && !omit_dst_addr_for_concat) 
 	command_line << _printDstAddr(dstrel, dst);
 
-    command_line << _printDstService(srvrel);
+    if (!omit_dst_port_for_concat)
+        command_line << _printDstService(srvrel);
 
 /* keeping state does not apply to deny/reject 
    however some rules need state check even if action is Deny
