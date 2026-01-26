@@ -120,7 +120,7 @@ bool formatInterfaceKey(RuleElementItf *itf, string &out)
     return true;
 }
 
-bool formatDstPort(Service *srv, PolicyCompiler *compiler, string &out, string &proto)
+bool formatDstPort(Service *srv, Compiler *compiler, string &out, string &proto)
 {
     if (srv == nullptr) return false;
     if (!TCPService::isA(srv) && !UDPService::isA(srv)) return false;

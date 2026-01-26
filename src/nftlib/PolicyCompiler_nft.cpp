@@ -236,21 +236,21 @@ string PolicyCompiler_nft::getAddressTableVarName(FWObject *at)
     return ostr.str();
 }
 
-bool PolicyCompiler_nft::isNftSetOptimizationEnabled() const
+bool PolicyCompiler_nft::isNftSetOptimizationEnabled()
 {
     FWOptions *options = getCachedFwOpt();
     if (options == nullptr) return true;
     return !options->getBool("disable_nft_set_optimization");
 }
 
-bool PolicyCompiler_nft::isNftVerdictMapEnabled() const
+bool PolicyCompiler_nft::isNftVerdictMapEnabled()
 {
     FWOptions *options = getCachedFwOpt();
     if (options == nullptr) return false;
     return options->getBool("use_nft_verdict_map");
 }
 
-string PolicyCompiler_nft::getRejectExpression(PolicyRule *rule) const
+string PolicyCompiler_nft::getRejectExpression(PolicyRule *rule)
 {
     string s = getActionOnReject(rule);
     if (isActionOnRejectTCPRST(rule))
