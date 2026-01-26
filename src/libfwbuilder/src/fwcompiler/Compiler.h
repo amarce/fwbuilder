@@ -891,6 +891,7 @@ public:
          * returns pointer to the cached firewall options object
          */
         libfwbuilder::FWOptions* getCachedFwOpt() { return fwopt; }
+        const libfwbuilder::FWOptions* getCachedFwOpt() const { return fwopt; }
         
 	/**
 	 * internal: scans children of 's' and, if finds host or
