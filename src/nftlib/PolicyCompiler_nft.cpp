@@ -236,7 +236,7 @@ string PolicyCompiler_nft::getAddressTableVarName(FWObject *at)
     return ostr.str();
 }
 
-bool PolicyCompiler_nft::isNftSetOptimizationEnabled()
+bool PolicyCompiler_nft::isNftSetOptimizationEnabled() const
 {
     FWOptions *options = getCachedFwOpt();
     if (options == nullptr) return true;
