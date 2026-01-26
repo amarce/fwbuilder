@@ -108,7 +108,7 @@ protected:
                                         bool v6=false);
         std::string getAddressTableVarName(libfwbuilder::FWObject *iface);
 
-        bool isNftSetOptimizationEnabled();
+        bool isNftSetOptimizationEnabled() const;
         bool isNftVerdictMapEnabled();
         bool canUseNftSetForAddresses(libfwbuilder::RuleElement *rel) const;
         bool canUseNftSetForServices(libfwbuilder::RuleElementSrv *rel) const;
