@@ -1378,7 +1378,6 @@ string PolicyCompiler_nft::PrintRule::PolicyRuleToString(PolicyRule *rule)
         command_line << _startRuleLine();
         command_line << _printChain(rule);
         command_line << _printDirectionAndInterface(rule);
-        command_line << " " << rule->getStr("nft_vmap_expression") << " ";
         if (!ruleopt->getBool("stateless") || rule->getBool("force_state_check"))
         {
             if (command_line.str().find("ct state", 0) == string::npos)
@@ -1386,6 +1385,7 @@ string PolicyCompiler_nft::PrintRule::PolicyRuleToString(PolicyRule *rule)
         }
         command_line << _printTimeInterval(rule);
         command_line << _printModules(rule);
+        command_line << " " << rule->getStr("nft_vmap_expression") << " ";
         command_line << _endRuleLine();
         return command_line.str();
     }
