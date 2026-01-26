@@ -597,40 +597,7 @@ string PolicyCompiler_nft::PrintRule::_printActionOnReject(PolicyRule *rule)
     Service *srv = compiler->getFirstSrv(rule);
     assert(srv);
 #endif
-
-    string s = ipt_comp->getActionOnReject(rule);
-    if (ipt_comp->isActionOnRejectTCPRST(rule))
-        return nft_utils::rejectWithExpression("tcp-reset", ipt_comp->ipv6);
-
-    if (s.find("ICMP6") != string::npos)
-    {
-        if (s.find("Addr") != string::npos)
-            return nft_utils::rejectWithExpression("icmp6-addr-unreachable", true);
-        if (s.find("Port") != string::npos)
-            return nft_utils::rejectWithExpression("icmp6-port-unreachable", true);
-        if (s.find("Adm") != string::npos)
-            return nft_utils::rejectWithExpression("icmp6-adm-prohibited", true);
-    }
-
-    if (s.find("ICMP") != string::npos)
-    {
-        if (s.find("Net Unreachable") != string::npos)
-            return nft_utils::rejectWithExpression("icmp-net-unreachable", false);
-        if (s.find("Host Unreachable") != string::npos)
-            return nft_utils::rejectWithExpression("icmp-host-unreachable", false);
-        if (s.find("Port Unreachable") != string::npos)
-            return nft_utils::rejectWithExpression("icmp-port-unreachable", false);
-        if (s.find("Proto Unreachable") != string::npos)
-            return nft_utils::rejectWithExpression("icmp-proto-unreachable", false);
-        if (s.find("Net Prohibited") != string::npos)
-            return nft_utils::rejectWithExpression("icmp-net-prohibited", false);
-        if (s.find("Host Prohibited") != string::npos)
-            return nft_utils::rejectWithExpression("icmp-host-prohibited", false);
-        if (s.find("Admin Prohibited") != string::npos)
-            return nft_utils::rejectWithExpression("icmp-admin-prohibited", false);
-    }
-
-    return nft_utils::rejectWithExpression("", ipt_comp->ipv6);
+    return ipt_comp->getRejectExpression(rule);
 }
 
 string PolicyCompiler_nft::PrintRule::_printGlobalLogParameters()
@@ -1404,6 +1371,17 @@ string PolicyCompiler_nft::PrintRule::PolicyRuleToString(PolicyRule *rule)
 {
     FWOptions *ruleopt = rule->getOptionsObject();
     FWObject    *ref;
+
+    if (rule->getBool("nft_verdict_map"))
+    {
+        std::ostringstream command_line;
+        command_line << _startRuleLine();
+        command_line << _printChain(rule);
+        command_line << _printDirectionAndInterface(rule);
+        command_line << " " << rule->getStr("nft_vmap_expression") << " ";
+        command_line << _endRuleLine();
+        return command_line.str();
+    }
 
     RuleElementSrc *srcrel=rule->getSrc();
     Address        *src=nullptr;
