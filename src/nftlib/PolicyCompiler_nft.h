@@ -33,6 +33,7 @@
 
 #include <QMap>
 #include <QString>
+#include <vector>
 
 
 namespace libfwbuilder
@@ -106,6 +107,12 @@ protected:
         std::string getInterfaceVarName(libfwbuilder::FWObject *iface,
                                         bool v6=false);
         std::string getAddressTableVarName(libfwbuilder::FWObject *iface);
+
+        bool isNftSetOptimizationEnabled() const;
+        bool canUseNftSetForAddresses(libfwbuilder::RuleElement *rel) const;
+        bool canUseNftSetForServices(libfwbuilder::RuleElementSrv *rel) const;
+        bool canUseNftSetForIntervals(
+            libfwbuilder::RuleElementInterval *rel) const;
 
 
         /**
@@ -643,12 +650,25 @@ protected:
 	 */
         DECLARE_POLICY_RULE_PROCESSOR(specialCaseWithFWInDstAndOutbound);
 
-	/**
-	 * expands src and dst if both contain fw object. Unlike
-	 * standard processor ExpandMultipleAddresses, this one
-	 * uses loopback interface as well.
-	 */
+        /**
+         * expands src and dst if both contain fw object. Unlike
+         * standard processor ExpandMultipleAddresses, this one
+         * uses loopback interface as well.
+         */
         DECLARE_POLICY_RULE_PROCESSOR(specialCaseWithFW2);
+
+        /**
+         * expand objects with multiple addresses unless rule elements
+         * can be represented as nft sets.
+         */
+        class ExpandMultipleAddresses :
+            public PolicyCompiler::ExpandMultipleAddresses
+        {
+            public:
+            ExpandMultipleAddresses(const std::string &n) :
+                PolicyCompiler::ExpandMultipleAddresses(n) {}
+            virtual bool processNext();
+        };
 
 	/**
 	 * checks for the following situations: 
@@ -920,6 +940,32 @@ protected:
         DECLARE_POLICY_RULE_PROCESSOR(prepareForMultiport);
 
         /**
+         * this processor converts to atomic rules using all combinations
+         * of objects in Src,Dst. It ignores Srv.
+         */
+        class ConvertToAtomicForAddresses :
+            public PolicyCompiler::ConvertToAtomicForAddresses
+        {
+            public:
+            ConvertToAtomicForAddresses(const std::string &n) :
+                PolicyCompiler::ConvertToAtomicForAddresses(n) {}
+            virtual bool processNext();
+        };
+
+        /**
+         * this processor splits rule so that each atomic rule has
+         * exactly one Interval rule element
+         */
+        class ConvertToAtomicForIntervals :
+            public PolicyCompiler::ConvertToAtomicForIntervals
+        {
+            public:
+            ConvertToAtomicForIntervals(const std::string &n) :
+                PolicyCompiler::ConvertToAtomicForIntervals(n) {}
+            virtual bool processNext();
+        };
+
+        /**
          *  eliminates duplicate objects in SRC. Uses default comparison
          *  in eliminateDuplicatesInRE which compares IDs
          */
@@ -1072,10 +1118,27 @@ public:
             bool print_once_on_top;
             bool minus_n_tracker_initialized;
             bool have_m_iprange;
+            bool omit_src_addr_for_concat;
+            bool omit_dst_addr_for_concat;
+            bool omit_src_port_for_concat;
+            bool omit_dst_port_for_concat;
             std::string current_rule_label;
             std::string version;
 
             void initializeMinusNTracker();
+            void resetSetTracking();
+            std::string trimSpaces(const std::string &value) const;
+            std::vector<std::string> collectAddressSetEntries(
+                libfwbuilder::RuleElement *rel);
+            std::vector<std::string> collectPortSetEntries(
+                libfwbuilder::RuleElementSrv *rel, bool src_ports);
+            std::string formatAddressSetEntry(libfwbuilder::Address *addr);
+            std::string printAddressSet(libfwbuilder::RuleElement *rel,
+                                        const std::string &direction);
+            std::string printPortSet(libfwbuilder::RuleElementSrv *rel,
+                                     const std::string &proto,
+                                     bool src_ports);
+            std::string printConcatenatedSet(libfwbuilder::PolicyRule *rule);
 
             /*
              * Prints single --option with argument and negation "!"

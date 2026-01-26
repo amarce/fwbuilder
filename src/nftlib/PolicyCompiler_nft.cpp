@@ -235,6 +235,73 @@ string PolicyCompiler_nft::getAddressTableVarName(FWObject *at)
     return ostr.str();
 }
 
+bool PolicyCompiler_nft::isNftSetOptimizationEnabled() const
+{
+    FWOptions *options = getCachedFwOpt();
+    if (options == nullptr) return true;
+    return !options->getBool("disable_nft_set_optimization");
+}
+
+bool PolicyCompiler_nft::canUseNftSetForAddresses(RuleElement *rel) const
+{
+    if (!isNftSetOptimizationEnabled()) return false;
+    if (rel == nullptr || rel->isAny() || rel->size() <= 1) return false;
+    if (rel->getBool("single_object_negation")) return false;
+
+    for (FWObject::iterator it = rel->begin(); it != rel->end(); ++it)
+    {
+        FWObject *obj = *it;
+        if (FWReference::cast(obj) != nullptr)
+            obj = FWReference::cast(obj)->getPointer();
+        if (obj == nullptr) return false;
+        if (combinedAddress::cast(obj) != nullptr ||
+            physAddress::cast(obj) != nullptr)
+            return false;
+        if (MultiAddressRunTime::cast(obj) != nullptr) return false;
+        if (Interface::cast(obj) != nullptr) return false;
+
+        Address *addr = Address::cast(obj);
+        if (addr == nullptr) return false;
+        if (!addr->hasInetAddress()) return false;
+        if (addr->countInetAddresses(true) != 1) return false;
+    }
+    return true;
+}
+
+bool PolicyCompiler_nft::canUseNftSetForServices(RuleElementSrv *rel) const
+{
+    if (!isNftSetOptimizationEnabled()) return false;
+    if (rel == nullptr || rel->isAny() || rel->size() <= 1) return false;
+    if (rel->getBool("single_object_negation")) return false;
+
+    FWObject *obj = rel->front();
+    if (obj && FWReference::cast(obj) != nullptr)
+        obj = FWReference::cast(obj)->getPointer();
+    Service *srv = Service::cast(obj);
+    if (srv == nullptr) return false;
+    if (!TCPService::isA(srv) && !UDPService::isA(srv)) return false;
+
+    for (FWObject::iterator it = rel->begin(); it != rel->end(); ++it)
+    {
+        FWObject *o = *it;
+        if (FWReference::cast(o) != nullptr)
+            o = FWReference::cast(o)->getPointer();
+        Service *s = Service::cast(o);
+        if (s == nullptr) return false;
+        if (!TCPService::isA(s) && !UDPService::isA(s)) return false;
+        if (TCPService::isA(s) && TCPService::cast(s)->inspectFlags())
+            return false;
+    }
+    return true;
+}
+
+bool PolicyCompiler_nft::canUseNftSetForIntervals(
+    RuleElementInterval *rel) const
+{
+    (void)rel;
+    return false;
+}
+
 string PolicyCompiler_nft::getNewTmpChainName(PolicyRule *rule)
 {
     std::ostringstream str;
@@ -2884,6 +2951,23 @@ bool PolicyCompiler_nft::specialCaseWithFW2::processNext()
     return true;
 }
 
+bool PolicyCompiler_nft::ExpandMultipleAddresses::processNext()
+{
+    PolicyRule *rule=getNext(); if (rule==nullptr) return false;
+    PolicyCompiler_nft *nft_comp=dynamic_cast<PolicyCompiler_nft*>(compiler);
+
+    RuleElementSrc *src=rule->getSrc();    assert(src);
+    RuleElementDst *dst=rule->getDst();    assert(dst);
+
+    if (!nft_comp->canUseNftSetForAddresses(src))
+        compiler->_expand_addr(rule, src, true);
+    if (!nft_comp->canUseNftSetForAddresses(dst))
+        compiler->_expand_addr(rule, dst, true);
+
+    tmp_queue.push_back(rule);
+    return true;
+}
+
 bool PolicyCompiler_nft::specialCaseWithUnnumberedInterface::dropUnnumberedInterface(RuleElement *re)
 {
     if (re->isAny()) return true;
@@ -3838,11 +3922,18 @@ bool PolicyCompiler_nft::prepareForMultiport::processNext()
 
     RuleElementSrv *rel= rule->getSrv();
     Service        *srv= compiler->getFirstSrv(rule);
+    PolicyCompiler_nft *nft_comp=dynamic_cast<PolicyCompiler_nft*>(compiler);
 
     if (rel->size()==1)
     {
 	tmp_queue.push_back(rule);
 	return true;
+    }
+
+    if (nft_comp->canUseNftSetForServices(rel))
+    {
+        tmp_queue.push_back(rule);
+        return true;
     }
 
     if (IPService::isA(srv) || ICMPService::isA(srv) || ICMP6Service::isA(srv) ||
@@ -3903,6 +3994,101 @@ bool PolicyCompiler_nft::prepareForMultiport::processNext()
     }
 
     tmp_queue.push_back(rule);
+    return true;
+}
+
+bool PolicyCompiler_nft::ConvertToAtomicForAddresses::processNext()
+{
+    PolicyRule *rule=getNext(); if (rule==nullptr) return false;
+    PolicyCompiler_nft *nft_comp=dynamic_cast<PolicyCompiler_nft*>(compiler);
+
+    RuleElementSrc *src=rule->getSrc();    assert(src);
+    RuleElementDst *dst=rule->getDst();    assert(dst);
+
+    bool src_multi = src->size() > 1;
+    bool dst_multi = dst->size() > 1;
+    bool src_set = src_multi && nft_comp->canUseNftSetForAddresses(src);
+    bool dst_set = dst_multi && nft_comp->canUseNftSetForAddresses(dst);
+
+    if ((src_multi && !src_set) || (dst_multi && !dst_set))
+    {
+        for (FWObject::iterator i1=src->begin(); i1!=src->end(); ++i1) {
+            for (FWObject::iterator i2=dst->begin(); i2!=dst->end(); ++i2) {
+
+                PolicyRule *r = compiler->dbcopy->createPolicyRule();
+                r->duplicate(rule);
+                compiler->temp_ruleset->add(r);
+
+                FWObject *s;
+                s=r->getSrc();	assert(s);
+                s->clearChildren();
+                s->addCopyOf( *i1 );
+
+                s=r->getDst();	assert(s);
+                s->clearChildren();
+                s->addCopyOf( *i2 );
+
+                tmp_queue.push_back(r);
+            }
+        }
+        return true;
+    }
+
+    if (src_set || dst_set)
+    {
+        tmp_queue.push_back(rule);
+        return true;
+    }
+
+    for (FWObject::iterator i1=src->begin(); i1!=src->end(); ++i1) {
+        for (FWObject::iterator i2=dst->begin(); i2!=dst->end(); ++i2) {
+
+            PolicyRule *r = compiler->dbcopy->createPolicyRule();
+            r->duplicate(rule);
+            compiler->temp_ruleset->add(r);
+
+            FWObject *s;
+            s=r->getSrc();	assert(s);
+            s->clearChildren();
+            s->addCopyOf( *i1 );
+
+            s=r->getDst();	assert(s);
+            s->clearChildren();
+            s->addCopyOf( *i2 );
+
+            tmp_queue.push_back(r);
+        }
+    }
+    return true;
+}
+
+bool PolicyCompiler_nft::ConvertToAtomicForIntervals::processNext()
+{
+    PolicyRule *rule=getNext(); if (rule==nullptr) return false;
+    PolicyCompiler_nft *nft_comp=dynamic_cast<PolicyCompiler_nft*>(compiler);
+    RuleElementInterval *ivl=rule->getWhen();
+
+    if (ivl==nullptr || ivl->isAny() ||
+        (ivl->size() > 1 && nft_comp->canUseNftSetForIntervals(ivl)))
+    {
+        tmp_queue.push_back(rule);
+        return true;
+    }
+
+    for (FWObject::iterator i1=ivl->begin(); i1!=ivl->end(); ++i1) {
+
+        PolicyRule *r = compiler->dbcopy->createPolicyRule();
+        r->duplicate(rule);
+        compiler->temp_ruleset->add(r);
+
+        FWObject *s;
+
+        s=r->getWhen();	assert(s);
+        s->clearChildren();
+        s->addCopyOf( *i1 );
+
+        tmp_queue.push_back(r);
+    }
     return true;
 }
 
