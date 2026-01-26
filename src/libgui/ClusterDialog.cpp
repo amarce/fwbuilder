@@ -242,15 +242,38 @@ void ClusterDialog::applyChanges()
     string oldname = obj->getName();
     string newname = string(m_dialog->obj_name->text().toUtf8().constData());
     string oldplatform = obj->getStr("platform");
+    string old_host_os = obj->getStr("host_OS");
 
     new_state->setName(newname);
     m_dialog->commentKeywords->applyChanges(new_state);
 
     string pl = readPlatform(m_dialog->platform).toLatin1().constData();
     new_state->setStr("platform", pl);
-    new_state->setStr("host_OS", readHostOS(m_dialog->hostOS).toLatin1().constData());
+    string new_host_os = readHostOS(m_dialog->hostOS).toLatin1().constData();
+    new_state->setStr("host_OS", new_host_os);
 
     s->setInactive(m_dialog->inactive->isChecked());
+
+    if (oldplatform != pl)
+    {
+        if (fwbdebug)
+            qDebug() << "ClusterDialog::applyChanges() platform has changed"
+                     << oldplatform.c_str() << "->" << pl.c_str()
+                     << "clearing option 'compiler'";
+        platformChanged();
+        FWOptions *opt = s->getOptionsObject();
+        opt->setStr("compiler", "");
+        Resources::setDefaultTargetOptions(pl, s);
+    }
+
+    if (old_host_os != new_host_os)
+    {
+        if (fwbdebug)
+            qDebug() << "ClusterDialog::applyChanges() host_OS has changed"
+                     << old_host_os.c_str() << "->" << new_host_os.c_str();
+        hostOSChanged();
+        Resources::setDefaultTargetOptions(new_host_os, s);
+    }
 
     if (!cmd->getOldState()->cmp(new_state, true))
     {
@@ -260,4 +283,3 @@ void ClusterDialog::applyChanges()
 
     updateTimeStamps();
 }
-
