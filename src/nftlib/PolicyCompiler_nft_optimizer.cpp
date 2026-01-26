@@ -30,7 +30,12 @@
 #include "fwbuilder/IPService.h"
 #include "fwbuilder/ICMPService.h"
 #include "fwbuilder/TCPService.h"
+#include "fwbuilder/TCPUDPService.h"
 #include "fwbuilder/UDPService.h"
+#include "fwbuilder/AddressRange.h"
+#include "fwbuilder/Interface.h"
+#include "fwbuilder/MultiAddress.h"
+#include "fwbuilder/physAddress.h"
 #include "fwbuilder/Policy.h"
 #include "fwbuilder/Firewall.h"
 
@@ -41,12 +46,109 @@
 #include <iostream>
 #include <iomanip>
 #include <sstream>
+#include <set>
 
 #include <assert.h>
 
 using namespace libfwbuilder;
 using namespace fwcompiler;
 using namespace std;
+
+namespace
+{
+struct VerdictMapGroup
+{
+    PolicyRule *base_rule = nullptr;
+    string chain;
+    string iface_key;
+    string proto;
+    string verdict;
+    int direction = 0;
+    int first_index = -1;
+    bool valid = true;
+    vector<pair<int, string>> entries;
+    std::set<string> tuples_seen;
+};
+
+bool formatAddressValue(Address *addr, string &out)
+{
+    if (addr == nullptr) return false;
+    if (combinedAddress::cast(addr) != nullptr) return false;
+    if (physAddress::cast(addr) != nullptr) return false;
+    if (Interface::cast(addr) != nullptr) return false;
+    if (MultiAddressRunTime::cast(addr) != nullptr) return false;
+
+    if (AddressRange::cast(addr) != nullptr)
+    {
+        AddressRange *ar = AddressRange::cast(addr);
+        const InetAddr &range_start = ar->getRangeStart();
+        const InetAddr &range_end = ar->getRangeEnd();
+        if (range_start != range_end)
+        {
+            out = range_start.toString() + "-" + range_end.toString();
+            return true;
+        }
+        out = range_start.toString();
+        return true;
+    }
+
+    const InetAddr *addr_ptr = addr->getAddressPtr();
+    const InetAddr *mask = addr->getNetmaskPtr();
+    if (addr_ptr == nullptr || addr_ptr->isAny()) return false;
+    if (mask == nullptr) return false;
+
+    out = addr_ptr->toString();
+    if (addr->dimension() > 1 && !mask->isHostMask())
+        out += "/" + std::to_string(mask->getLength());
+    return true;
+}
+
+bool formatInterfaceKey(RuleElementItf *itf, string &out)
+{
+    if (itf == nullptr || itf->isAny())
+    {
+        out = "any";
+        return true;
+    }
+    if (itf->getNeg() || itf->getBool("single_object_negation")) return false;
+    if (itf->size() != 1) return false;
+    FWObject *iface_obj = FWReference::cast(itf->front())
+        ? FWReference::cast(itf->front())->getPointer()
+        : itf->front();
+    if (iface_obj == nullptr) return false;
+    out = iface_obj->getName();
+    return true;
+}
+
+bool formatDstPort(Service *srv, Compiler *compiler, string &out, string &proto)
+{
+    if (srv == nullptr) return false;
+    if (!TCPService::isA(srv) && !UDPService::isA(srv)) return false;
+
+    if (TCPService::isA(srv))
+    {
+        TCPService *tcp = TCPService::cast(srv);
+        if (tcp->inspectFlags() || tcp->getEstablished()) return false;
+    }
+
+    TCPUDPService *tcpudp = TCPUDPService::cast(srv);
+    if (tcpudp == nullptr) return false;
+    int src_start = tcpudp->getSrcRangeStart();
+    int src_end = tcpudp->getSrcRangeEnd();
+    if (src_start > 0 || src_end > 0) return false;
+
+    int dst_start = tcpudp->getDstRangeStart();
+    int dst_end = tcpudp->getDstRangeEnd();
+    compiler->normalizePortRange(dst_start, dst_end);
+    if (dst_start <= 0 || dst_end <= 0) return false;
+    if (dst_start != dst_end) return false;
+
+    out = std::to_string(dst_start);
+    proto = TCPService::isA(srv) ? "tcp" : "udp";
+    return true;
+}
+
+} // namespace
 
 /*
  * Optimizer 1:
@@ -314,6 +416,164 @@ bool PolicyCompiler_nft::optimize3::processNext()
     return true;
 }
 
+bool PolicyCompiler_nft::optimizeVerdictMap::processNext()
+{
+    PolicyCompiler_nft *ipt_comp = dynamic_cast<PolicyCompiler_nft*>(compiler);
+    slurp();
+    if (tmp_queue.empty()) return false;
+
+    if (!ipt_comp->isNftVerdictMapEnabled()) return true;
+
+    deque<Rule*> reordered;
+    VerdictMapGroup current;
+    string current_key;
+    vector<PolicyRule*> current_rules;
+
+    auto flush_group = [&]() {
+        if (current.entries.size() > 1 && current.valid)
+        {
+            string family = ipt_comp->ipv6 ? "ip6" : "ip";
+            std::ostringstream entries;
+            for (size_t i = 0; i < current.entries.size(); ++i)
+            {
+                if (i != 0) entries << ", ";
+                entries << current.entries[i].second << " : " << current.verdict;
+            }
+            string expression = family + " saddr . " + family + " daddr . " +
+                current.proto + " dport vmap { " + entries.str() + " }";
+
+            PolicyRule *new_rule = compiler->dbcopy->createPolicyRule();
+            compiler->temp_ruleset->add(new_rule);
+            new_rule->duplicate(current.base_rule);
+            new_rule->setBool("nft_verdict_map", true);
+            new_rule->setStr("nft_vmap_expression", expression);
+            reordered.push_back(new_rule);
+        } else
+        {
+            for (size_t i = 0; i < current_rules.size(); ++i)
+                reordered.push_back(current_rules[i]);
+        }
+
+        current = VerdictMapGroup();
+        current_key.clear();
+        current_rules.clear();
+    };
+
+    for (deque<Rule*>::iterator it = tmp_queue.begin();
+         it != tmp_queue.end(); ++it)
+    {
+        PolicyRule *rule = PolicyRule::cast(*it);
+        if (rule == nullptr)
+        {
+            flush_group();
+            continue;
+        }
+
+        bool eligible = true;
+        if (rule->isFallback() || rule->isHidden()) eligible = false;
+        if (rule->getLogging()) eligible = false;
+        if (rule->getTagging() || rule->getClassification() || rule->getRouting())
+            eligible = false;
+
+        FWOptions *ruleopt = rule->getOptionsObject();
+        if (ruleopt == nullptr) eligible = false;
+        if (ruleopt != nullptr &&
+            (ruleopt->getInt("limit_value") > 0 ||
+             ruleopt->getInt("connlimit_value") > 0 ||
+             ruleopt->getInt("hashlimit_value") > 0))
+            eligible = false;
+
+        RuleElementInterval *when = rule->getWhen();
+        if (when != nullptr && !when->isAny()) eligible = false;
+
+        RuleElementSrc *srcrel = rule->getSrc();
+        RuleElementDst *dstrel = rule->getDst();
+        RuleElementSrv *srvrel = rule->getSrv();
+        if (srcrel == nullptr || dstrel == nullptr || srvrel == nullptr)
+            eligible = false;
+
+        if (srcrel != nullptr && dstrel != nullptr && srvrel != nullptr)
+        {
+            if (srcrel->getNeg() || dstrel->getNeg() || srvrel->getNeg())
+                eligible = false;
+            if (srcrel->getBool("single_object_negation") ||
+                dstrel->getBool("single_object_negation") ||
+                srvrel->getBool("single_object_negation"))
+                eligible = false;
+            if (srcrel->size() != 1 || dstrel->size() != 1 || srvrel->size() != 1)
+                eligible = false;
+        }
+
+        string proto;
+        string port;
+        string src_value;
+        string dst_value;
+        string iface_key;
+        string verdict;
+        string chain;
+        int direction = rule->getDirection();
+        if (eligible)
+        {
+            Service *srv = compiler->getFirstSrv(rule);
+            if (!formatDstPort(srv, compiler, port, proto)) eligible = false;
+
+            Address *src = compiler->getFirstSrc(rule);
+            Address *dst = compiler->getFirstDst(rule);
+            if (!formatAddressValue(src, src_value)) eligible = false;
+            if (!formatAddressValue(dst, dst_value)) eligible = false;
+
+            if (!formatInterfaceKey(rule->getItf(), iface_key)) eligible = false;
+
+            string target = rule->getStr("ipt_target");
+            if (target == "ACCEPT") verdict = "accept";
+            else if (target == "DROP") verdict = "drop";
+            else if (target == "REJECT") verdict = ipt_comp->getRejectExpression(rule);
+            else eligible = false;
+
+            chain = rule->getStr("ipt_chain");
+        }
+
+        if (!eligible)
+        {
+            flush_group();
+            reordered.push_back(rule);
+            continue;
+        }
+
+        string group_key = chain + "|" + iface_key + "|" +
+            std::to_string(direction) + "|" + proto + "|" + verdict;
+
+        if (!current_rules.empty() && group_key != current_key)
+            flush_group();
+
+        if (current_rules.empty())
+        {
+            current.base_rule = rule;
+            current.chain = chain;
+            current.iface_key = iface_key;
+            current.direction = direction;
+            current.proto = proto;
+            current.verdict = verdict;
+            current_key = group_key;
+        }
+
+        string tuple = src_value + " . " + dst_value + " . " + port;
+        if (current.tuples_seen.count(tuple))
+            current.valid = false;
+        else
+            current.tuples_seen.insert(tuple);
+
+        current.entries.push_back(std::make_pair(
+            static_cast<int>(current.entries.size()), tuple));
+        current_rules.push_back(rule);
+    }
+
+    if (!current_rules.empty()) flush_group();
+
+    tmp_queue.swap(reordered);
+    return true;
+}
+
 bool PolicyCompiler_nft::optimizeForMinusIOPlus::processNext()
 {
     PolicyRule *rule;
@@ -338,4 +598,3 @@ bool PolicyCompiler_nft::optimizeForMinusIOPlus::processNext()
     tmp_queue.push_back(rule);
     return true;
 }
-

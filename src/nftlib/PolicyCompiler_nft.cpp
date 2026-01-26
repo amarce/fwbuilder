@@ -25,6 +25,7 @@
 #include "PolicyCompiler_nft.h"
 #include "OSConfigurator_linux24.h"
 #include "nftables_options.h"
+#include "nft_utils.h"
 #include "ipt_utils.h"
 
 #include "fwbuilder/AddressRange.h"
@@ -235,11 +236,55 @@ string PolicyCompiler_nft::getAddressTableVarName(FWObject *at)
     return ostr.str();
 }
 
-bool PolicyCompiler_nft::isNftSetOptimizationEnabled() const
+bool PolicyCompiler_nft::isNftSetOptimizationEnabled()
 {
     FWOptions *options = getCachedFwOpt();
     if (options == nullptr) return true;
     return !options->getBool("disable_nft_set_optimization");
+}
+
+bool PolicyCompiler_nft::isNftVerdictMapEnabled()
+{
+    FWOptions *options = getCachedFwOpt();
+    if (options == nullptr) return false;
+    return options->getBool("use_nft_verdict_map");
+}
+
+string PolicyCompiler_nft::getRejectExpression(PolicyRule *rule)
+{
+    string s = getActionOnReject(rule);
+    if (isActionOnRejectTCPRST(rule))
+        return nft_utils::rejectWithExpression("tcp-reset", ipv6);
+
+    if (s.find("ICMP6") != string::npos)
+    {
+        if (s.find("Addr") != string::npos)
+            return nft_utils::rejectWithExpression("icmp6-addr-unreachable", true);
+        if (s.find("Port") != string::npos)
+            return nft_utils::rejectWithExpression("icmp6-port-unreachable", true);
+        if (s.find("Adm") != string::npos)
+            return nft_utils::rejectWithExpression("icmp6-adm-prohibited", true);
+    }
+
+    if (s.find("ICMP") != string::npos)
+    {
+        if (s.find("Net Unreachable") != string::npos)
+            return nft_utils::rejectWithExpression("icmp-net-unreachable", false);
+        if (s.find("Host Unreachable") != string::npos)
+            return nft_utils::rejectWithExpression("icmp-host-unreachable", false);
+        if (s.find("Port Unreachable") != string::npos)
+            return nft_utils::rejectWithExpression("icmp-port-unreachable", false);
+        if (s.find("Proto Unreachable") != string::npos)
+            return nft_utils::rejectWithExpression("icmp-proto-unreachable", false);
+        if (s.find("Net Prohibited") != string::npos)
+            return nft_utils::rejectWithExpression("icmp-net-prohibited", false);
+        if (s.find("Host Prohibited") != string::npos)
+            return nft_utils::rejectWithExpression("icmp-host-prohibited", false);
+        if (s.find("Admin Prohibited") != string::npos)
+            return nft_utils::rejectWithExpression("icmp-admin-prohibited", false);
+    }
+
+    return nft_utils::rejectWithExpression("", ipv6);
 }
 
 bool PolicyCompiler_nft::canUseNftSetForAddresses(RuleElement *rel) const
@@ -4841,6 +4886,8 @@ void PolicyCompiler_nft::compile()
 
     add( new ConvertToAtomicForIntervals(
              "convert to atomic rules by interval element") );
+
+    add( new optimizeVerdictMap("optimization verdict map") );
 
     // see #2235. Action Continue should generate nftables command
     // w/o "-j TARGET" parameter

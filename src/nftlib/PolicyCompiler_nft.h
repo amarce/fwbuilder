@@ -108,11 +108,13 @@ protected:
                                         bool v6=false);
         std::string getAddressTableVarName(libfwbuilder::FWObject *iface);
 
-        bool isNftSetOptimizationEnabled() const;
+        bool isNftSetOptimizationEnabled();
+        bool isNftVerdictMapEnabled();
         bool canUseNftSetForAddresses(libfwbuilder::RuleElement *rel) const;
         bool canUseNftSetForServices(libfwbuilder::RuleElementSrv *rel) const;
         bool canUseNftSetForIntervals(
             libfwbuilder::RuleElementInterval *rel) const;
+        std::string getRejectExpression(libfwbuilder::PolicyRule *rule);
 
 
         /**
@@ -927,6 +929,12 @@ protected:
             virtual bool processNext();
         };
         friend class PolicyCompiler_nft::optimize3;
+
+        /**
+         * Collapse compatible rules into a single verdict map (vmap).
+         */
+        DECLARE_POLICY_RULE_PROCESSOR(optimizeVerdictMap);
+        friend class PolicyCompiler_nft::optimizeVerdictMap;
 
 	/**
 	 * Optimize rules by dropping "-i +" or "-o +" if chain is
