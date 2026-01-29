@@ -2554,6 +2554,7 @@
           <Option name="ulog_nlgroup">1</Option>
           <Option name="ulog_qthreshold">1</Option>
           <Option name="use_ULOG">False</Option>
+          <Option name="enable_parallel_compilation">False</Option>
           <Option name="use_iptables_restore">False</Option>
           <Option name="use_numeric_log_levels">False</Option>
           <Option name="verify_interfaces">True</Option>
@@ -3349,6 +3350,7 @@
           <Option name="ulog_nlgroup">1</Option>
           <Option name="ulog_qthreshold">1</Option>
           <Option name="use_ULOG">False</Option>
+          <Option name="enable_parallel_compilation">False</Option>
           <Option name="use_iptables_restore">False</Option>
           <Option name="use_numeric_log_levels">False</Option>
           <Option name="verify_interfaces">True</Option>
