@@ -4365,6 +4365,16 @@ void PolicyCompiler_ipt::compile()
         add( new checkForObjectsWithErrors(
                  "check if we have objects with errors in rule elements"));
 
+        add( new decideOnChainForClassify("set chain for action is Classify"));
+        add( new InterfaceAndDirection("fill in interface and direction"));
+        add( new splitIfIfaceAndDirectionBoth(
+                 "split interface rule with direction 'both'"));
+
+        add( new setChainForMangle("set chain for other rules in mangle"));
+        add( new setChainPreroutingForTag("chain PREROUTING for Tag"));
+        add( new setChainPostroutingForTag("chain POSTROUTING for Tag"));
+        add( new finalizeChain( "decide on chain"   ) );
+
         // #2367
 
         // if (my_table=="mangle" &&
@@ -4957,6 +4967,11 @@ list<string> PolicyCompiler_ipt::getUsedChains()
 bool PolicyCompiler_ipt::checkForShadowingPlatformSpecific(PolicyRule *candidate_r1,
                                                            PolicyRule *candidate_r2)
 {
+    const string chain_1 = candidate_r1->getStr("ipt_chain");
+    const string chain_2 = candidate_r2->getStr("ipt_chain");
+    if (!chain_1.empty() && !chain_2.empty() && chain_1 != chain_2)
+        return false;
+
     FWOptions *opt_1 = candidate_r1->getOptionsObject();
     FWOptions *opt_2 = candidate_r2->getOptionsObject();
 
