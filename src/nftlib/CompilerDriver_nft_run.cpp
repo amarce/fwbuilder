@@ -34,12 +34,16 @@
 #include <assert.h>
 #include <cstring>
 #include <iomanip>
+#include <future>
 #include <memory>
+#include <mutex>
+#include <vector>
 
 #include "version.h"
 #include "CompilerDriver_nft.h"
 #include "PolicyCompiler_nft.h"
 #include "NATCompiler_nft.h"
+#include "MangleTableCompiler_nft.h"
 #include "RoutingCompiler_nft.h"
 #include "Preprocessor_ipt.h"
 #include "OSConfigurator_linux24.h"
@@ -88,6 +92,55 @@ using namespace libfwbuilder;
 using namespace fwcompiler;
 
 extern QString user_name;
+
+namespace
+{
+    std::string buildAutomaticMangleRules(
+        libfwbuilder::FWObjectDatabase *objdb,
+        libfwbuilder::Firewall *fw,
+        libfwbuilder::Library *persistent_objects,
+        bool ipv6_policy,
+        fwcompiler::OSConfigurator_linux24 *oscnf,
+        std::map<const std::string, bool> &minus_n_commands_mangle,
+        const std::string &single_rule_id,
+        int dl,
+        bool rule_debug_on,
+        int drp,
+        int verbose,
+        bool have_dynamic_interfaces,
+        bool in_test_mode,
+        bool in_embedded_mode,
+        bool have_connmark,
+        bool have_connmark_in_output,
+        std::vector<std::string> &errors)
+    {
+        std::unique_ptr<MangleTableCompiler_nft> mangle_compiler(
+            new MangleTableCompiler_nft(
+                objdb, fw, ipv6_policy, oscnf, &minus_n_commands_mangle));
+
+        mangle_compiler->setSingleRuleCompileMode(single_rule_id);
+        mangle_compiler->setDebugLevel(dl);
+        if (rule_debug_on) mangle_compiler->setDebugRule(drp);
+        mangle_compiler->setVerbose((bool)(verbose));
+        mangle_compiler->setHaveDynamicInterfaces(have_dynamic_interfaces);
+        if (in_test_mode) mangle_compiler->setTestMode();
+        if (in_embedded_mode) mangle_compiler->setEmbeddedMode();
+        if (persistent_objects != nullptr)
+            mangle_compiler->setPersistentObjects(persistent_objects);
+
+        std::string automatic_rules =
+            mangle_compiler->printAutomaticRulesForMangleTable(
+                have_connmark, have_connmark_in_output);
+
+        if (mangle_compiler->haveErrorsAndWarnings())
+        {
+            errors.push_back(mangle_compiler->getErrors(""));
+            mangle_compiler->clearErrors();
+        }
+
+        return automatic_rules;
+    }
+}
 
 static FWObject* create_combinedAddress(int id)
 {
@@ -232,6 +285,9 @@ QString CompilerDriver_nft::run(const std::string &cluster_id,
         std::map<const std::string, bool> minus_n_commands_nat;
 
         vector<int> ipv4_6_runs;
+        bool enable_parallel_compilation =
+            options->getBool("enable_parallel_compilation");
+        std::mutex compilation_mutex;
 
         findImportedRuleSets(fw, all_policies);
         findBranchesInMangleTable(fw, all_policies);
@@ -329,10 +385,15 @@ QString CompilerDriver_nft::run(const std::string &cluster_id,
             ostringstream nat_rules_stream;
 
             bool empty_output = true;
+            bool have_connmark = false;
+            bool have_connmark_in_output = false;
+            bool have_top_policy = false;
 
             // First, process branch NAT rulesets, then top NAT ruleset
 
             NAT *top_nat = nullptr;
+            vector<NAT*> nat_rulesets;
+            nat_rulesets.reserve(all_nat.size());
             for (list<FWObject*>::iterator p=all_nat.begin();
                  p!=all_nat.end(); ++p)
             {
@@ -343,27 +404,66 @@ QString CompilerDriver_nft::run(const std::string &cluster_id,
                     top_nat = nat;
                     continue;
                 }
-                if (! processNatRuleSet(
+                nat_rulesets.push_back(nat);
+            }
+            if (top_nat) nat_rulesets.push_back(top_nat);
+
+            vector<CompilerDriver_nft::NatRuleSetResult> nat_results;
+            nat_results.resize(nat_rulesets.size());
+            if (enable_parallel_compilation && nat_rulesets.size() > 1)
+            {
+                vector<std::future<CompilerDriver_nft::NatRuleSetResult>> futures;
+                futures.reserve(nat_rulesets.size());
+                for (size_t idx = 0; idx < nat_rulesets.size(); ++idx)
+                {
+                    NAT *nat = nat_rulesets[idx];
+                    futures.push_back(std::async(std::launch::async, [&, nat]() {
+                        std::lock_guard<std::mutex> lock(compilation_mutex);
+                        return processNatRuleSet(
+                            fw,
+                            nat,
+                            single_rule_id,
+                            oscnf.get(),
+                            policy_af,
+                            minus_n_commands_nat);
+                    }));
+                }
+                for (size_t idx = 0; idx < futures.size(); ++idx)
+                    nat_results[idx] = futures[idx].get();
+            } else
+            {
+                for (size_t idx = 0; idx < nat_rulesets.size(); ++idx)
+                {
+                    nat_results[idx] = processNatRuleSet(
                         fw,
-                        nat,
+                        nat_rulesets[idx],
                         single_rule_id,
-                        nat_rules_stream,
                         oscnf.get(),
                         policy_af,
-                        minus_n_commands_nat)) empty_output = false;
+                        minus_n_commands_nat);
+                }
             }
 
-            if (top_nat &&
-                ! processNatRuleSet(
-                    fw,
-                    top_nat,
-                    single_rule_id,
-                    nat_rules_stream,
-                    oscnf.get(),
-                    policy_af,
-                    minus_n_commands_nat)) empty_output = false;
+            for (size_t idx = 0; idx < nat_results.size(); ++idx)
+            {
+                const CompilerDriver_nft::NatRuleSetResult &result =
+                    nat_results[idx];
+                if (!result.nat_rules.empty())
+                    nat_rules_stream << result.nat_rules;
+                if (!result.empty_output) empty_output = false;
+                if (result.nat_rules_count > 0) have_nat = true;
+                if (result.has_mapping_update)
+                {
+                    branch_ruleset_to_chain_mapping[result.branch_name] =
+                        result.used_chains;
+                }
+                for (size_t e = 0; e < result.errors.size(); ++e)
+                    all_errors.push_back(result.errors[e].c_str());
+            }
 
             // first process all non-top rule sets, then all top rule sets
+            vector<Policy*> policy_rulesets;
+            policy_rulesets.reserve(all_policies.size());
             for (int all_top = 0; all_top < 2; ++all_top)
             {
                 for (list<FWObject*>::iterator p=all_policies.begin();
@@ -375,19 +475,105 @@ QString CompilerDriver_nft::run(const std::string &cluster_id,
                     if (policy->isTop() && all_top == 0) continue;
                     if (!policy->isTop() && all_top == 1) continue;
 
-                    if (! processPolicyRuleSet(
+                    policy_rulesets.push_back(policy);
+                }
+            }
+
+            vector<CompilerDriver_nft::PolicyRuleSetResult> policy_results;
+            policy_results.resize(policy_rulesets.size());
+            if (enable_parallel_compilation && policy_rulesets.size() > 1)
+            {
+                vector<std::future<CompilerDriver_nft::PolicyRuleSetResult>> futures;
+                futures.reserve(policy_rulesets.size());
+                for (size_t idx = 0; idx < policy_rulesets.size(); ++idx)
+                {
+                    Policy *policy = policy_rulesets[idx];
+                    futures.push_back(std::async(std::launch::async, [&, policy]() {
+                        std::lock_guard<std::mutex> lock(compilation_mutex);
+                        return processPolicyRuleSet(
                             fw,
                             policy,
                             single_rule_id,
-                            filter_rules_stream,
-                            mangle_rules_stream,
-                            automaitc_rules_stream,
-                            automaitc_mangle_stream,
                             oscnf.get(),
                             policy_af,
                             minus_n_commands_filter,
-                            minus_n_commands_mangle)) empty_output = false;
+                            minus_n_commands_mangle);
+                    }));
                 }
+                for (size_t idx = 0; idx < futures.size(); ++idx)
+                    policy_results[idx] = futures[idx].get();
+            } else
+            {
+                for (size_t idx = 0; idx < policy_rulesets.size(); ++idx)
+                {
+                    policy_results[idx] = processPolicyRuleSet(
+                        fw,
+                        policy_rulesets[idx],
+                        single_rule_id,
+                        oscnf.get(),
+                        policy_af,
+                        minus_n_commands_filter,
+                        minus_n_commands_mangle);
+                }
+            }
+
+            for (size_t idx = 0; idx < policy_results.size(); ++idx)
+            {
+                const CompilerDriver_nft::PolicyRuleSetResult &result =
+                    policy_results[idx];
+
+                have_connmark |= result.have_connmark;
+                have_connmark_in_output |= result.have_connmark_in_output;
+                if (result.is_top) have_top_policy = true;
+
+                if (!result.mangle_rules.empty())
+                    mangle_rules_stream << result.mangle_rules;
+                if (!result.filter_rules.empty())
+                    filter_rules_stream << result.filter_rules;
+                if (!result.automatic_filter_rules.empty() &&
+                    automaitc_rules_stream.tellp() <= 0)
+                {
+                    automaitc_rules_stream << result.automatic_filter_rules;
+                }
+                if (!result.empty_output) empty_output = false;
+                for (size_t e = 0; e < result.errors.size(); ++e)
+                    all_errors.push_back(result.errors[e].c_str());
+            }
+
+            if (have_top_policy && automaitc_mangle_stream.tellp() <= 0)
+            {
+                std::vector<std::string> mangle_errors;
+                std::string auto_mangle_rules = buildAutomaticMangleRules(
+                    objdb,
+                    fw,
+                    persistent_objects,
+                    ipv6_policy,
+                    oscnf.get(),
+                    minus_n_commands_mangle,
+                    single_rule_id,
+                    dl,
+                    rule_debug_on,
+                    drp,
+                    verbose,
+                    have_dynamic_interfaces,
+                    inTestMode(),
+                    inEmbeddedMode(),
+                    have_connmark,
+                    have_connmark_in_output,
+                    mangle_errors);
+
+                if (!auto_mangle_rules.empty())
+                {
+                    if (!single_rule_compile_on)
+                    {
+                        automaitc_mangle_stream
+                            << "# ================ Table 'mangle', "
+                            << "automatic rules\n";
+                    }
+                    automaitc_mangle_stream << auto_mangle_rules;
+                }
+                for (size_t e = 0; e < mangle_errors.size(); ++e)
+                    all_errors.push_back(mangle_errors[e].c_str());
             }
 
             if (!empty_output && !single_rule_compile_on)

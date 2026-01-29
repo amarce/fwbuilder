@@ -35,6 +35,7 @@
 #include <sstream>
 #include <map>
 #include <list>
+#include <vector>
 
 #include <QString>
 #include <QMap>
@@ -77,8 +78,30 @@ namespace fwcompiler
             fwcompiler::OSConfigurator *_oscnf,
             std::map<const std::string, bool> *m_n_commands_map);
 
-        bool have_connmark;
-        bool have_connmark_in_output;
+        struct PolicyRuleSetResult
+        {
+            bool empty_output = true;
+            bool is_top = false;
+            std::string branch_name;
+            std::string filter_rules;
+            std::string mangle_rules;
+            std::string automatic_filter_rules;
+            bool have_connmark = false;
+            bool have_connmark_in_output = false;
+            std::vector<std::string> errors;
+        };
+
+        struct NatRuleSetResult
+        {
+            bool empty_output = true;
+            bool is_top = false;
+            std::string branch_name;
+            std::string nat_rules;
+            int nat_rules_count = 0;
+            std::list<std::string> used_chains;
+            bool has_mapping_update = false;
+            std::vector<std::string> errors;
+        };
 
 public:
 
@@ -104,24 +127,19 @@ public:
                                const std::string& filter_script,
                                bool ipv6_policy);
 
-        bool processPolicyRuleSet(
+        PolicyRuleSetResult processPolicyRuleSet(
             libfwbuilder::Firewall *fw,
             libfwbuilder::FWObject *ruleset,
             const std::string &single_rule_id,
-            std::ostringstream &filter_table_stream,
-            std::ostringstream &mangle_table_stream,
-            std::ostringstream &automatic_rules_stream,
-            std::ostringstream &automatic_mangle_stream,
             fwcompiler::OSConfigurator_linux24 *oscnf,
             int policy_af,
             std::map<const std::string, bool> &minus_n_commands_filter,
             std::map<const std::string, bool> &minus_n_commands_mangle);
 
-        bool processNatRuleSet(
+        NatRuleSetResult processNatRuleSet(
             libfwbuilder::Firewall *fw,
             libfwbuilder::FWObject *ruleset,
             const std::string &single_rule_id,
-            std::ostringstream &nat_stream,
             fwcompiler::OSConfigurator_linux24 *oscnf,
             int policy_af,
             std::map<const std::string, bool> &minus_n_commands_nat);
