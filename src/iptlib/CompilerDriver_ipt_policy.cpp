@@ -82,9 +82,10 @@ CompilerDriver_ipt::PolicyRuleSetResult CompilerDriver_ipt::processPolicyRuleSet
     assignRuleSetChain(policy);
     string branch_name = policy->getName();
     result.branch_name = branch_name;
-    result.is_top = policy->isTop();
 
     if (!policy->matchingAddressFamily(policy_af)) return result;
+
+    result.is_top = policy->isTop();
 
     bool ipv6_policy = (policy_af == AF_INET6);
 
