@@ -45,26 +45,29 @@ using namespace libfwbuilder;
 using namespace fwcompiler;
 
 
-bool CompilerDriver_ipt::processNatRuleSet(
+CompilerDriver_ipt::NatRuleSetResult CompilerDriver_ipt::processNatRuleSet(
     Firewall *fw,
     FWObject *ruleset,
     const std::string &single_rule_id,
-    std::ostringstream &nat_rules_stream,
     fwcompiler::OSConfigurator_linux24 *oscnf,
     int policy_af,
     std::map<const std::string, bool> &minus_n_commands_nat)
 {
+    NatRuleSetResult result;
     int nat_rules_count  = 0;
     string host_os = fw->getStr("host_OS");
     bool flush_and_set_default_policy = Resources::getTargetOptionBool(
         host_os, "default/flush_and_set_default_policy");
     bool empty_output = true;
+    ostringstream nat_rules_stream;
 
     NAT *nat = NAT::cast(ruleset);
     assignRuleSetChain(nat);
     string branch_name = nat->getName();
+    result.branch_name = branch_name;
+    result.is_top = nat->isTop();
                 
-    if (!nat->matchingAddressFamily(policy_af)) return true;
+    if (!nat->matchingAddressFamily(policy_af)) return result;
 
     bool ipv6_policy = (policy_af == AF_INET6);
 
@@ -98,8 +101,6 @@ bool CompilerDriver_ipt::processNatRuleSet(
         nat_compiler->epilog();
     }
 
-    have_nat = (have_nat || (nat_rules_count > 0));
-
     if (nat_compiler->getCompiledScriptLength() > 0)
     {
         if (!single_rule_compile_on)
@@ -119,14 +120,17 @@ bool CompilerDriver_ipt::processNatRuleSet(
         nat_rules_stream << "\n";
         empty_output = false;
 
-        branch_ruleset_to_chain_mapping[branch_name] = nat_compiler->getUsedChains();
+        result.used_chains = nat_compiler->getUsedChains();
+        result.has_mapping_update = true;
     }
 
     if (nat_compiler->haveErrorsAndWarnings())
     {
-        all_errors.push_back(nat_compiler->getErrors("").c_str());
+        result.errors.push_back(nat_compiler->getErrors(""));
     }
 
-    return empty_output;
+    result.empty_output = empty_output;
+    result.nat_rules = nat_rules_stream.str();
+    result.nat_rules_count = nat_rules_count;
+    return result;
 }
-

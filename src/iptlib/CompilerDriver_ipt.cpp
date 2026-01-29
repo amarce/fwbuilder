@@ -57,8 +57,6 @@ using namespace fwcompiler;
 CompilerDriver_ipt::CompilerDriver_ipt(FWObjectDatabase *db) :
     CompilerDriver(db)
 {
-    have_connmark = false;
-    have_connmark_in_output = false;
 }
 
 CompilerDriver_ipt::~CompilerDriver_ipt()
@@ -236,4 +234,3 @@ std::unique_ptr<PolicyCompiler_ipt> CompilerDriver_ipt::createPolicyCompiler(
 
     return policy_compiler;
 }
-

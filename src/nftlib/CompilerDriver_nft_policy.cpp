@@ -51,22 +51,22 @@ using namespace fwcompiler;
 
 // we always first process all non-top rule sets, then all top rule
 // sets
-bool CompilerDriver_nft::processPolicyRuleSet(
+CompilerDriver_nft::PolicyRuleSetResult CompilerDriver_nft::processPolicyRuleSet(
     Firewall *fw,
     FWObject *ruleset,
     const string &single_rule_id,
-    ostringstream &filter_rules_stream,
-    ostringstream &mangle_rules_stream,
-    ostringstream &automatic_rules_stream,
-    ostringstream &automatic_mangle_stream,
     OSConfigurator_linux24 *oscnf,
     int policy_af,
     std::map<const std::string, bool> &minus_n_commands_filter,
     std::map<const std::string, bool> &minus_n_commands_mangle)
 {
+    PolicyRuleSetResult result;
     int policy_rules_count  = 0;
     int mangle_rules_count  = 0;
     bool empty_output = true;
+    ostringstream filter_rules_stream;
+    ostringstream mangle_rules_stream;
+    ostringstream automatic_rules_stream;
     string prolog_place = fw->getOptionsObject()->getStr("prolog_place");
     string platform = fw->getStr("platform");
     string host_os = fw->getStr("host_OS");
@@ -81,8 +81,10 @@ bool CompilerDriver_nft::processPolicyRuleSet(
     Policy *policy = Policy::cast(ruleset);
     assignRuleSetChain(policy);
     string branch_name = policy->getName();
+    result.branch_name = branch_name;
+    result.is_top = policy->isTop();
 
-    if (!policy->matchingAddressFamily(policy_af)) return true;
+    if (!policy->matchingAddressFamily(policy_af)) return result;
 
     bool ipv6_policy = (policy_af == AF_INET6);
 
@@ -122,8 +124,9 @@ bool CompilerDriver_nft::processPolicyRuleSet(
         // later if either of these flags is true after
         // all rulesets have been processed.
 
-        have_connmark |= mangle_compiler->haveConnMarkRules();
-        have_connmark_in_output |= mangle_compiler->haveConnMarkRulesInOutput();
+        result.have_connmark = mangle_compiler->haveConnMarkRules();
+        result.have_connmark_in_output =
+            mangle_compiler->haveConnMarkRulesInOutput();
 
         long m_str_pos = mangle_rules_stream.tellp();
 
@@ -146,7 +149,7 @@ bool CompilerDriver_nft::processPolicyRuleSet(
 
         if (mangle_compiler->haveErrorsAndWarnings())
         {
-            all_errors.push_back(mangle_compiler->getErrors("").c_str());
+            result.errors.push_back(mangle_compiler->getErrors(""));
             mangle_compiler->clearErrors();
         }
 
@@ -199,7 +202,7 @@ bool CompilerDriver_nft::processPolicyRuleSet(
 
         if (policy_compiler->haveErrorsAndWarnings())
         {
-            all_errors.push_back(policy_compiler->getErrors("").c_str());
+            result.errors.push_back(policy_compiler->getErrors(""));
             policy_compiler->clearErrors();
         }
     }
@@ -238,7 +241,7 @@ bool CompilerDriver_nft::processPolicyRuleSet(
         // printAutomaticRules() can generate errors and warnings
         if (policy_compiler->haveErrorsAndWarnings())
         {
-            all_errors.push_back(policy_compiler->getErrors("").c_str());
+            result.errors.push_back(policy_compiler->getErrors(""));
             policy_compiler->clearErrors();
         }
 
@@ -255,36 +258,9 @@ bool CompilerDriver_nft::processPolicyRuleSet(
         }
     }
 
-    long auto_mangle_stream_position = automatic_mangle_stream.tellp();
-    if (policy->isTop() && auto_mangle_stream_position <= 0)
-    {
-        // Note that we process non-top rule sets first and then
-        // deal with the top rule set. By the time we get here the
-        // have_connmark flags reflect the state of all other rule
-        // sets and the top one.
-
-        ostringstream tmp_m;
-        tmp_m << mangle_compiler->printAutomaticRulesForMangleTable(
-            have_connmark, have_connmark_in_output);
-
-        // printAutomaticRulesForMangleTable() can generate errors and warnings
-        if (mangle_compiler->haveErrorsAndWarnings())
-        {
-            all_errors.push_back(mangle_compiler->getErrors("").c_str());
-            mangle_compiler->clearErrors();
-        }
-
-        if (tmp_m.tellp() > 0)
-        {
-            if (!single_rule_compile_on)
-            {
-                automatic_mangle_stream << "# ================ Table 'mangle', ";
-                automatic_mangle_stream << "automatic rules";
-                automatic_mangle_stream << "\n";
-            }
-            automatic_mangle_stream << tmp_m.str();
-        }
-    }
-
-    return empty_output;
+    result.empty_output = empty_output;
+    result.filter_rules = filter_rules_stream.str();
+    result.mangle_rules = mangle_rules_stream.str();
+    result.automatic_filter_rules = automatic_rules_stream.str();
+    return result;
 }

@@ -57,8 +57,6 @@ using namespace fwcompiler;
 CompilerDriver_nft::CompilerDriver_nft(FWObjectDatabase *db) :
     CompilerDriver(db)
 {
-    have_connmark = false;
-    have_connmark_in_output = false;
 }
 
 CompilerDriver_nft::~CompilerDriver_nft()
